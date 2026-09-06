@@ -1,6 +1,6 @@
 # Supertonic — Lightning Fast, On-Device, Accurate TTS
 
-## FORK to add style changes for voices, including emotions.
+## This is a FORK that adds: style changes ability for voices, including emotions.
 
 <p align="center">
   <img src="img/Supertonic3_HeroImage.png" alt="Supertonic 3 Banner">
