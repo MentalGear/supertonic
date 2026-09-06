@@ -1,15 +1,6 @@
 # Supertonic — Lightning Fast, On-Device, Accurate TTS
 
-> [!CAUTION]
-> ## ⚠️ Service and Repository Notice (July 23, 2026)
->
-> **This repository will be archived, and there will be no further development or official support for the open-source Supertonic models.**
->
-> **Voice Builder will no longer be accessible after August 31, 2026.**
->
-> For details about the service changes, timeline, and information for existing Voice Builder users, please see the [official announcement](https://supertone.ai).
->
-> Thank you to everyone who has used, contributed to, and supported Supertonic.
+## FORK to add style changes for voices, including emotions.
 
 <p align="center">
   <img src="img/Supertonic3_HeroImage.png" alt="Supertonic 3 Banner">
