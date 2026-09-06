@@ -74,7 +74,8 @@ label {
 
 input[type="file"],
 textarea,
-input[type="number"] {
+input[type="number"],
+select {
     width: 100%;
     padding: 12px;
     border: 2px solid #e0e0e0;
@@ -85,7 +86,8 @@ input[type="number"] {
 
 input[type="file"]:focus,
 textarea:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+select:focus {
     outline: none;
     border-color: #667eea;
 }
@@ -94,6 +96,12 @@ textarea {
     resize: vertical;
     min-height: 100px;
     font-family: inherit;
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: #667eea;
+    margin-top: 10px;
 }
 
 .params-grid {

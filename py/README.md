@@ -39,6 +39,44 @@ pip install -r requirements.txt
 
 ## Basic Usage
 
+### Emotion control
+
+Emotion control uses style-difference JSON files generated offline from
+neutral and emotional reference styles. The file must contain `style_ttl` and
+`style_dp` tensors with the same dimensions as the voice styles. The supported
+emotion names are `surprised` and `angry`; their calibrated files should be
+placed at `../assets/emotion_styles/surprised.json` and
+`../assets/emotion_styles/angry.json`.
+
+Apply an emotion to a voice with a continuous intensity:
+
+```bash
+uv run example_onnx.py \
+  --voice-style ../assets/voice_styles/M1.json \
+  --emotion surprised \
+  --emotion-intensity 0.75
+```
+
+An emotion file stores the difference vector, not a replacement voice. At
+intensity `0.0` the original voice is unchanged; at `1.0` the complete
+difference is applied. The same vector can therefore be used with every base
+voice, while the ONNX model inputs remain unchanged.
+
+Create the named emotion files from paired neutral and emotional style files:
+
+```bash
+python create_emotion_style.py \
+  --neutral M1_neutral.json F1_neutral.json \
+  --emotional M1_surprised.json F1_surprised.json \
+  --emotion surprised \
+  --output ../assets/emotion_styles/surprised.json
+```
+
+Repeat the command with `--emotion angry` for the angry control. The source
+style files can be generated from consented reference recordings with the
+installed `supertonic.embed` extractor; its model and CUDA requirements are
+described in that project's documentation.
+
 ### Example 1: Default Inference
 Run inference with default settings:
 ```bash

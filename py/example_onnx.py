@@ -3,7 +3,13 @@ import os
 
 import soundfile as sf
 
-from helper import load_text_to_speech, timer, sanitize_filename, load_voice_style
+from helper import (
+    load_emotion_style,
+    load_text_to_speech,
+    timer,
+    sanitize_filename,
+    load_voice_style,
+)
 
 
 def parse_args():
@@ -46,6 +52,33 @@ def parse_args():
         nargs="+",
         default=["../assets/voice_styles/M1.json"],
         help="Voice style file path(s). Can specify multiple files for batch processing",
+    )
+    parser.add_argument(
+        "--emotion-style",
+        type=str,
+        help="Optional custom style-difference JSON to apply to every voice",
+    )
+    parser.add_argument(
+        "--emotion",
+        choices=["surprised", "angry"],
+        help="Named emotion style to apply to every voice",
+    )
+    parser.add_argument(
+        "--emotion-dir",
+        type=str,
+        default="../assets/emotion_styles",
+        help="Directory containing named emotion style-difference JSON files",
+    )
+    parser.add_argument(
+        "--emotion-intensity",
+        type=float,
+        default=1.0,
+        help="Emotion intensity from 0.0 (neutral) to 1.0 (full), default: 1.0",
+    )
+    parser.add_argument(
+        "--emotion-include-duration",
+        action="store_true",
+        help="Also blend the emotion duration tensor (default: TTL only)",
     )
     parser.add_argument(
         "--text",
@@ -93,6 +126,18 @@ text_to_speech = load_text_to_speech(args.onnx_dir, args.use_gpu)
 
 # --- 3. Load Voice Style --- #
 style = load_voice_style(voice_style_paths, verbose=True)
+if args.emotion_style and args.emotion:
+    raise ValueError("Use either --emotion-style or --emotion, not both")
+emotion_style_path = args.emotion_style
+if args.emotion:
+    emotion_style_path = os.path.join(args.emotion_dir, f"{args.emotion}.json")
+if emotion_style_path:
+    emotion_style = load_emotion_style(emotion_style_path, verbose=True)
+    style = style.with_emotion(
+        emotion_style,
+        args.emotion_intensity,
+        include_duration=args.emotion_include_duration,
+    )
 
 # --- 4. Synthesize Speech --- #
 for n in range(n_test):

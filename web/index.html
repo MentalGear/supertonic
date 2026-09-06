@@ -41,6 +41,21 @@
                         </select>
                     </div>
 
+                    <div class="params-grid">
+                        <div class="section">
+                            <label for="emotionSelect">Emotion:</label>
+                            <select id="emotionSelect">
+                                <option value="">Neutral</option>
+                                <option value="surprised">Surprised</option>
+                                <option value="angry">Angry</option>
+                            </select>
+                        </div>
+                        <div class="section">
+                            <label for="emotionIntensity">Intensity: <span id="emotionIntensityValue">100%</span></label>
+                            <input type="range" id="emotionIntensity" value="1" min="0" max="1" step="0.05">
+                        </div>
+                    </div>
+
                     <div class="section">
                         <label for="langSelect">Language:</label>
                         <select id="langSelect">

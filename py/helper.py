@@ -136,6 +136,44 @@ class Style:
         self.ttl = style_ttl_onnx
         self.dp = style_dp_onnx
 
+    def with_emotion(
+        self,
+        emotion_style: "Style",
+        intensity: float = 1.0,
+        include_duration: bool = False,
+    ) -> "Style":
+        """Blend an emotion style into this voice style.
+
+        ``emotion_style`` is a style-difference vector, with the same tensor
+        shapes as this style. An intensity of 0 keeps the voice unchanged;
+        1 applies the complete difference vector. TTL rows are normalized
+        after blending; duration is unchanged unless explicitly enabled.
+        """
+        if not 0.0 <= intensity <= 1.0:
+            raise ValueError("Emotion intensity must be between 0.0 and 1.0")
+        if self.ttl.shape[1:] != emotion_style.ttl.shape[1:]:
+            raise ValueError(
+                f"Emotion TTL shape {emotion_style.ttl.shape} does not match voice TTL shape {self.ttl.shape}"
+            )
+        if self.dp.shape[1:] != emotion_style.dp.shape[1:]:
+            raise ValueError(
+                f"Emotion DP shape {emotion_style.dp.shape} does not match voice DP shape {self.dp.shape}"
+            )
+        if emotion_style.ttl.shape[0] not in (1, self.ttl.shape[0]):
+            raise ValueError(
+                f"Emotion TTL batch {emotion_style.ttl.shape[0]} does not match voice batch {self.ttl.shape[0]}"
+            )
+        if emotion_style.dp.shape[0] not in (1, self.dp.shape[0]):
+            raise ValueError(
+                f"Emotion DP batch {emotion_style.dp.shape[0]} does not match voice batch {self.dp.shape[0]}"
+            )
+        emotion_ttl = np.broadcast_to(emotion_style.ttl, self.ttl.shape)
+        emotion_dp = np.broadcast_to(emotion_style.dp, self.dp.shape)
+        ttl = self.ttl + intensity * emotion_ttl
+        ttl = ttl / np.linalg.norm(ttl, axis=-1, keepdims=True).clip(min=1e-8)
+        dp = self.dp + intensity * emotion_dp if include_duration else self.dp.copy()
+        return Style(ttl, dp)
+
 
 class TextToSpeech:
     def __init__(
@@ -365,6 +403,18 @@ def load_voice_style(voice_style_paths: list[str], verbose: bool = False) -> Sty
     if verbose:
         print(f"Loaded {bsz} voice styles")
     return Style(ttl_style, dp_style)
+
+
+def load_emotion_style(emotion_style_path: str, verbose: bool = False) -> Style:
+    """Load a style-difference vector for use with :meth:`Style.with_emotion`.
+
+    Emotion files use the same JSON tensor schema as voice styles, but their
+    tensors contain offsets from the neutral voice rather than a full voice.
+    """
+    emotion_style = load_voice_style([emotion_style_path], verbose=False)
+    if verbose:
+        print(f"Loaded emotion style: {emotion_style_path}")
+    return emotion_style
 
 
 @contextmanager

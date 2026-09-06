@@ -19,11 +19,15 @@ let cfgs = null;
 // Pre-computed style
 let currentStyle = null;
 let currentStylePath = DEFAULT_VOICE_STYLE_PATH;
+let currentEmotionStyle = null;
 
 // UI Elements
 const textInput = document.getElementById('text');
 const voiceStyleSelect = document.getElementById('voiceStyleSelect');
 const voiceStyleInfo = document.getElementById('voiceStyleInfo');
+const emotionSelect = document.getElementById('emotionSelect');
+const emotionIntensity = document.getElementById('emotionIntensity');
+const emotionIntensityValue = document.getElementById('emotionIntensityValue');
 const langSelect = document.getElementById('langSelect');
 const totalStepInput = document.getElementById('totalStep');
 const speedInput = document.getElementById('speed');
@@ -66,6 +70,13 @@ async function loadStyleFromJSON(stylePath) {
         console.error('Error loading voice style:', error);
         throw error;
     }
+}
+
+function getActiveStyle() {
+    if (!currentEmotionStyle) {
+        return currentStyle;
+    }
+    return currentStyle.withEmotion(currentEmotionStyle, parseFloat(emotionIntensity.value));
 }
 
 // Load models on page load
@@ -155,6 +166,30 @@ voiceStyleSelect.addEventListener('change', async (e) => {
     }
 });
 
+emotionIntensity.addEventListener('input', () => {
+    emotionIntensityValue.textContent = `${Math.round(parseFloat(emotionIntensity.value) * 100)}%`;
+});
+
+emotionSelect.addEventListener('change', async (e) => {
+    const emotion = e.target.value;
+    try {
+        if (!emotion) {
+            currentEmotionStyle = null;
+            return;
+        }
+        generateBtn.disabled = true;
+        showStatus(`Loading ${emotion} emotion style...`, 'info');
+        currentEmotionStyle = await loadStyleFromJSON(`assets/emotion_styles/${emotion}.json`);
+        showStatus(`${emotion} emotion style loaded.`, 'success');
+    } catch (error) {
+        currentEmotionStyle = null;
+        emotionSelect.value = '';
+        showError(`Error loading emotion style: ${error.message}`);
+    } finally {
+        generateBtn.disabled = false;
+    }
+});
+
 // Main synthesis function
 async function generateSpeech() {
     const text = textInput.value.trim();
@@ -190,6 +225,7 @@ async function generateSpeech() {
         const totalStep = parseInt(totalStepInput.value);
         const speed = parseFloat(speedInput.value);
         const lang = langSelect.value;
+        const activeStyle = getActiveStyle();
         
         showStatus('ℹ️ <strong>Generating speech from text...</strong>');
         const tic = Date.now();
@@ -197,7 +233,7 @@ async function generateSpeech() {
         const { wav, duration } = await textToSpeech.call(
             text,
             lang,
-            currentStyle, 
+            activeStyle,
             totalStep,
             speed,
             0.3,

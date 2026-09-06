@@ -143,6 +143,60 @@ export class Style {
         this.ttl = ttlTensor;
         this.dp = dpTensor;
     }
+
+    withEmotion(emotionStyle, intensity = 1.0, includeDuration = false) {
+        if (intensity < 0 || intensity > 1) {
+            throw new Error('Emotion intensity must be between 0 and 1');
+        }
+        if (this.ttl.dims.slice(1).join(',') !== emotionStyle.ttl.dims.slice(1).join(',')) {
+            throw new Error('Emotion TTL dimensions do not match the voice style');
+        }
+        if (this.dp.dims.slice(1).join(',') !== emotionStyle.dp.dims.slice(1).join(',')) {
+            throw new Error('Emotion DP dimensions do not match the voice style');
+        }
+        const emotionTtlBatch = emotionStyle.ttl.dims[0];
+        const emotionDpBatch = emotionStyle.dp.dims[0];
+        if (![1, this.ttl.dims[0]].includes(emotionTtlBatch) ||
+            ![1, this.dp.dims[0]].includes(emotionDpBatch)) {
+            throw new Error('Emotion batch dimensions do not match the voice style');
+        }
+        const ttlData = new Float32Array(this.ttl.data.length);
+        const dpData = new Float32Array(this.dp.data.length);
+        const ttlStride = this.ttl.data.length / this.ttl.dims[0];
+        const dpStride = this.dp.data.length / this.dp.dims[0];
+        for (let batch = 0; batch < this.ttl.dims[0]; batch++) {
+            const emotionBatch = emotionTtlBatch === 1 ? 0 : batch;
+            for (let index = 0; index < ttlStride; index++) {
+                ttlData[batch * ttlStride + index] = this.ttl.data[batch * ttlStride + index] +
+                    intensity * emotionStyle.ttl.data[emotionBatch * ttlStride + index];
+            }
+        }
+        for (let batch = 0; batch < this.dp.dims[0]; batch++) {
+            const emotionBatch = emotionDpBatch === 1 ? 0 : batch;
+            for (let index = 0; index < dpStride; index++) {
+                dpData[batch * dpStride + index] = this.dp.data[batch * dpStride + index] +
+                    intensity * emotionStyle.dp.data[emotionBatch * dpStride + index];
+            }
+        }
+        for (let batch = 0; batch < this.ttl.dims[0]; batch++) {
+            const offset = batch * ttlStride;
+            let norm = 0;
+            for (let index = 0; index < ttlStride; index++) {
+                norm += ttlData[offset + index] ** 2;
+            }
+            norm = Math.max(Math.sqrt(norm), 1e-8);
+            for (let index = 0; index < ttlStride; index++) {
+                ttlData[offset + index] /= norm;
+            }
+        }
+        if (!includeDuration) {
+            dpData.set(this.dp.data);
+        }
+        return new Style(
+            new ort.Tensor('float32', ttlData, this.ttl.dims),
+            new ort.Tensor('float32', dpData, this.dp.dims)
+        );
+    }
 }
 
 /**
