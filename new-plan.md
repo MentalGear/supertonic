@@ -22,6 +22,14 @@ going to do.
 Secondary motivation worth stating: fully synthetic parametric voices sidestep
 the cloning-consent problem that zero-shot cloning creates.
 
+**Scope risk to name up front:** the highest axis count demonstrated in
+published work is three (VoiceShop: age + gender + accent). This plan implies
+roughly five once emotion axes are included. Nothing surveyed tests that many,
+and the documented failure mode as axes accumulate is cross-attribute leakage.
+Treat anything beyond three simultaneous axes as unproven territory, and stage
+the axis count upward with the leakage protocol in Phase 5 rather than
+assuming composition scales.
+
 ## Correction to the Premise
 
 The original sketch cited `docs/` as having "good results doing dynamic emotion
@@ -132,6 +140,16 @@ If not unit-norm, either rescale to the original per-row norm rather than to
 unit, or skip the normalize entirely when no delta is applied. Add a regression
 test asserting `base.with_deltas([]) == base` exactly.
 
+Prior art suggests this is probably benign but still worth confirming.
+`kdrkdrkdr/supertonic.embed` states that every row of *both* tensors is a unit
+vector in the released presets, and its own optimizer re-projects all 50 rows
+onto the unit sphere after each step. If that holds for our assets, the
+normalize at zero weight is a no-op rather than a corruption — but the whole
+emotion listening set rests on it, so measure rather than assume. Note also
+that `style_dp`'s 8 rows are unit-normalized too, which the current blending
+code does not account for: **DP deltas will need the same row projection once
+Phase 3 starts moving them.**
+
 ### 1b. Normalize-after-add is non-commutative
 
 Because the row normalize happens inside each blend, applying age then emotion
@@ -177,26 +195,64 @@ conditioned, and directly yields what a "recovered embedder" would give.
 
 Two variants, run both:
 
-**2a. Direct encoder.** Train `audio -> style_ttl` on optimizer-generated
-pairs. Turns per-speaker extraction into a single forward pass.
+**2a. Direct encoder, then refinement.** Train `audio -> style_ttl` on
+optimizer-generated pairs, turning per-speaker extraction into a forward pass.
+
+Do not stop there. The GAN-inversion literature's consistent finding is not
+"encoder replaces optimizer" but that **hybrid wins**: the survey
+([arXiv:2101.05278](https://arxiv.org/abs/2101.05278)) splits the field into
+optimization (accurate, slow), encoder (fast, loses fidelity), and hybrid, with
+HyperStyle- and PTI-style refinement beating pure encoders on fidelity while
+staying far cheaper than pure optimization. Apply the same shape: run a handful
+of gradient steps through the frozen graph starting from the encoder's output.
+Because the init is already near-optimal these should take seconds rather than
+minutes, giving a quality dial between "instant" and "optimizer-exact" instead
+of one fixed operating point.
+
+Evaluate the encoder against **the optimizer's own converged style**, not only
+against downstream audio quality. Audio metrics masked systematic encoder bias
+in the early image-inversion work, and the same failure is available here.
 
 **2b. Probe from an off-the-shelf speaker encoder.** Fit a map
 `ECAPA/WavLM embedding -> style_ttl`. Run this explicitly as a **linear probe
 first**, and report R^2 (per-row and overall), not just downstream audio
 quality. The R^2 is the result:
 
-- **High linear R^2** -> the two spaces are related by an affine map. Attribute
-  directions established in ECAPA space (where there is substantial existing
-  literature on age and speaker attributes) transfer into style space by
-  construction. That is a large shortcut: it means the attribute-axis work can
-  borrow from published speaker-embedding results rather than being derived
-  from scratch.
+A bare R^2 here would be meaningless. Two controls are mandatory:
+
+- **Control-task selectivity** (Hewitt & Liang,
+  [arXiv:1909.03368](https://arxiv.org/abs/1909.03368)): fit the identical
+  probe against shuffled targets and report real-minus-control. The target is
+  12,800-dimensional and VCTK offers ~110 speakers, so probe capacity alone can
+  fit noise to a flattering number.
+- **Speaker-disjoint splits.** Speaker-overlapping splits are documented to
+  inflate these scores substantially. Enforce disjointness before reporting.
+
+Report per-row R^2 as well as overall — a flat aggregate can hide that only a
+few of the 50 rows are linearly predictable, which feeds directly into the
+row-structure question in Phase 0.
+
+- **High linear R^2** -> the two spaces are related by an affine map, and
+  directions established in ECAPA space transfer into style space by
+  construction. **But this shortcut is gender-only.** Gender is near-perfectly
+  linearly decodable from ECAPA/x-vector/WavLM (~99-100%), whereas age
+  consistently requires nonlinear probing (best reported MAE ~4.8-5.3 years
+  with MLP/ResNet heads). So even the optimistic branch buys the presentation
+  axis and not the age axis — the one with no prior art. Plan for age to need
+  native derivation in Phase 3 regardless of how the probe lands.
 - **Low linear R^2, high MLP R^2** -> the spaces are related but nonlinearly.
   Usable as an encoder, but attribute directions will not transfer directly and
   must be derived natively in style space (phase 3).
 - **Low R^2 either way** -> style space encodes something meaningfully
   different from speaker-verification space. Informative on its own, and a
   signal that the direct encoder (2a) is the only viable route.
+
+Expect the middle branch. The closest published analog
+([arXiv:2607.26742](https://arxiv.org/abs/2607.26742)) maps a foreign embedding
+space into a frozen style-diffusion TTS latent, needs a nonlinear MLP adapter
+to do it, and still reaches only ~0.40-0.42 cosine similarity to native style
+prototypes. No published R^2 exists for ECAPA -> TTS-style-latent specifically,
+so this is a genuinely open measurement with no baseline to check against.
 
 Report the probe result before building on either branch. It changes how much
 of phase 3 is needed.
@@ -205,11 +261,31 @@ of phase 3 is needed.
 
 ### Are age and vocal presentation root attributes?
 
-Almost certainly not. They are derived and heavily **entangled**. Both load on
-shared underlying factors: F0 mean and range, formant dispersion (approximately
-vocal tract length), breathiness (H1-H2), jitter and shimmer, speech rate, and
-articulatory precision. Push F0 down to raise perceived age and perceived
-gender moves with it.
+Almost certainly not. They are derived and heavily **entangled** — but the
+correlates are not equally weighted, and an earlier draft of this plan had them
+wrong.
+
+**Primary, well-supported:** speech rate and articulation timing. Harnsberger
+et al. report a large effect of speech rate on perceived age (partial eta^2 =
+0.47), with the fast/slow contrast *larger* for older speakers — the regime
+where the axis matters most. Formant-frequency shifts with age are real but
+vowel-specific and modest.
+
+**Secondary and contested — do not treat as co-equal pillars:**
+
+- **F0 mean.** Showed no age-estimation effect in the study above once speech
+  rate was in the design. Age-related F0 decline is largely a female-specific
+  post-menopausal phenomenon; male F0 barely differs across age groups.
+- **Jitter and shimmer.** Explicitly reported as "not a robust cue"; increases
+  reported only for males, only from middle age.
+- **Breathiness / H1-H2.** Findings *contradict each other* across studies —
+  one finds elderly women less breathy than young women, another the reverse,
+  with only moderate correlation to perceived breathiness in either case.
+
+The entanglement is quantified and unavoidable: F0 mean alone explains ~43.5%
+of variance in masculinity ratings and ~24% in femininity ratings, while also
+being one of the few reliable age cues in women. Lowering F0 to age a female
+voice **will** read as more masculine. This is measured, not hypothetical.
 
 So do not assume a root-attribute set. Derive it:
 
@@ -219,10 +295,18 @@ So do not assume a root-attribute set. Derive it:
 3. Find directions two ways and compare: unsupervised (PCA over the style
    space, then correlate components against measured acoustics) and supervised
    (LDA or linear probe per labeled attribute).
-4. **Orthogonalize the resulting axes against each other** (Gram-Schmidt).
-   This is the concrete fix for entanglement — it is what makes "make older"
-   stop dragging perceived gender along, and it is standard practice in image
-   latent-space editing.
+4. **Orthogonalize the resulting axes against each other** (Gram-Schmidt) —
+   as a starting point, not a guaranteed fix. Orthogonalization does transfer
+   to speech: [arXiv:2402.12423](https://arxiv.org/abs/2402.12423) shows no
+   gender editing occurs when interpolating along the orthogonal component, so
+   this is not merely an image-domain analogy. **But no source was found
+   demonstrating that linear orthogonalization alone cleanly separates age
+   from gender in a real voice system** — the disentanglement literature
+   reaches for adversarial or mutual-information penalties instead. Treat
+   Gram-Schmidt as the cheap first attempt, verify it with the Phase 5
+   monotonicity probe rather than assuming it worked, and budget for an
+   adversarial or MI-penalty fallback if residual gender drift survives under
+   the age axis.
 
 ### The duration tensor cannot stay neutral
 
@@ -230,8 +314,9 @@ The emotion work leaves `style_dp` untouched by default (`include_duration` is
 opt-in), and that was a reasonable conservative choice for emotion. It will not
 survive contact with age.
 
-Speaking rate, pause structure, and articulation timing are among the strongest
-perceptual cues for age, and they live in DP, not TTL. An age axis that moves
+Speaking rate is not merely among the age cues — at partial eta^2 = 0.47 it is
+the largest single manipulated effect in the perceived-age literature, and it
+lives in DP, not TTL. An age axis that moves
 only TTL will produce a voice whose timbre says "older" while its timing says
 "younger" — the two cues fight, and the result reads as uncanny rather than
 old. The same applies, more weakly, to arousal-linked emotion.
@@ -239,7 +324,14 @@ old. The same applies, more weakly, to arousal-linked emotion.
 So: derive DP deltas jointly with TTL for every axis, not as an afterthought.
 DP is only 128 numbers against TTL's 12,800, so it is cheap to fit but easy to
 overfit — expect it to need heavier regularization, and evaluate it separately
-before combining.
+before combining. Its 8 rows are unit-normalized like TTL's, so DP deltas need
+the same row projection after blending.
+
+Note this is also where the plan departs from all surveyed prior art: every
+latent-editing TTS system found edits a *static* embedding and leaves rate
+alone. Moving DP has no direct precedent either supporting or refuting it, so
+it carries genuine research risk — and, given the effect size above, genuine
+upside.
 
 Treat `include_duration=False` as a debugging switch, not a default.
 
@@ -256,6 +348,14 @@ parameter moved what it claimed, monotonically
 
 This converts the project from "listen and hope" into something with
 regression tests. It is the highest-leverage single decision in this plan.
+
+**Validate the measurement loop before trusting it.** LPC-based formant and VTL
+estimation — what Praat and parselmouth do by default — is biased at high F0,
+which is precisely the regime of women's and children's voices: the populations
+the age and presentation axes most need. Check the loop against known-VTL
+references first, and either tune LPC order per speaker or use a non-LPC VTL
+estimator at the high-pitched end. A measurement harness that is wrong exactly
+where the axis is hardest would produce confident nonsense.
 
 ## Phase 4: Datasets
 
@@ -301,9 +401,25 @@ For each axis:
 - **Identity policy, decided per axis.** For emotion, speaker similarity should
   stay high. For age and presentation, changing perceived identity is partly
   the point. Decide and document per axis rather than applying one threshold.
+- **Pairwise and triple leakage.** VoiceShop
+  ([arXiv:2404.06674](https://arxiv.org/abs/2404.06674)) evaluates composed
+  edits by asking, for every attribute pair and triple, whether editing X
+  shifts perceived Y. Adopt that protocol — in the one paper that claims
+  success at multi-attribute editing, cross-attribute *leakage* is the reported
+  failure mode, not signal quality. This is the real test of whether Phase 3's
+  orthogonalization held.
 - **Intelligibility at the extremes.** WER via Whisper at the ends of each
-  range and beyond. Extrapolation past the observed data will break
-  intelligibility first, and this is what determines the safe parameter range.
+  range and beyond.
+
+  An earlier draft assumed intelligibility breaks first and therefore sets the
+  safe range. That is probably backwards.
+  [arXiv:2402.12423](https://arxiv.org/abs/2402.12423) reports that pushing a
+  gender edit past a coefficient threshold caused originally-female voices to
+  stop classifying as female at all — the direction goes **non-monotonic and
+  reverses** before audio quality visibly fails. So monotonicity failure and
+  WER failure are separately located thresholds, and the usable range is the
+  *minimum* of the two. Locate both independently; do not use WER as a proxy
+  for either.
 - **Cross-language transfer.** Supertonic covers 31 languages, but axes derived
   from English VCTK may not hold elsewhere — speaking-rate norms and F0 ranges
   differ by language, and DP deltas especially may not port. Check at least one
