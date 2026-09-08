@@ -43,7 +43,19 @@ inline burns the context the main loop needs for judgment.
   two tensors.
 - **Style blending lives in `py/helper.py` (`Style`) and `web/helper.js`.**
   Changes to blending semantics must land in both — the browser path is not
-  generated from the Python one.
+  generated from the Python one, and the two silently diverged once already
+  (the browser normalized `style_ttl` over the whole 50x256 block instead of
+  per row). When you touch blending, change both files and add a numeric
+  cross-check that the two agree.
+- **`with_deltas()` / `withDeltas()` is the blending API.** It takes any number
+  of `(delta, weight)` pairs, accumulates them in pre-normalization space, and
+  restores per-row norms exactly once at the end — so composition is order
+  independent and zero weight is an exact identity. Weights are deliberately
+  unclamped. `with_emotion()` is a backward-compatible single-delta wrapper.
+  The invariant to preserve: **normalize per row, over the last axis, once.**
+- Run the blending tests after any change there:
+  `node --test web/helper.test.js` and
+  `python3 -m unittest discover -s py -p "test_*.py"`.
 - **Do not commit ignored assets**: ONNX models, recordings, extracted style
   JSONs, generated WAVs.
 - Generated audio follows the naming and manifest convention in

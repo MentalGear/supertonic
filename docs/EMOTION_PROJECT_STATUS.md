@@ -133,6 +133,42 @@ MyDrive/supertonic-emotion-calibration/
 If Colab disconnects, reconnect the same Drive, rerun setup, and rerun the
 extraction cell. Existing completed emotion JSONs are skipped.
 
+## Session Handoff (current state)
+
+**No audio exists in a fresh clone.** `assets/`, `py/assets/` and `py/results/`
+are gitignored and are not present after cloning. Every calibrated style,
+model file, and WAV referenced below lives only on the machine that generated
+it. A new session must download the ONNX assets and preset voices before it can
+synthesize anything at all.
+
+**No audio was generated in the session that produced `new-plan.md` and the
+`with_deltas()` refactor.** That work was static analysis, documentation, and
+numeric tests against synthetic tensors. Nothing has been run through the real
+ONNX graph since the blending change.
+
+**Any audio produced by the browser path before that change is invalid.**
+`web/helper.js` normalized `style_ttl` across the whole 50x256 block instead of
+per row, scaling every row by 1/sqrt(50) — roughly 7.07x too small — at every
+intensity setting including neutral. The web demo's output never matched
+Python's and its "neutral" was never the base voice. Discard any web-generated
+comparison audio.
+
+**Python-generated listening sets are probably still valid, but verify.** The
+old Python code normalized rows to unit norm; the new code restores each row to
+its original pre-blend norm. Those are identical if and only if the preset rows
+are already unit-norm, which `kdrkdrkdr/supertonic.embed` reports is true of the
+released presets. Confirm before trusting existing sets, and regenerate if not:
+
+```python
+np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
+```
+
+**Next action is Phase 0 of [new-plan.md](../new-plan.md)**, the linearity gate:
+interpolate two preset voices at 0.25/0.5/0.75 and listen. It gates the entire
+parametric approach and it is the first thing that needs real assets. The
+sequencing that follows it is in that document, not in this one — this
+roadmap's phase order is superseded.
+
 ## Next Best Steps
 
 1. ~~Add `gain` as a real parameter~~ — superseded. `with_deltas()` accepts any
@@ -148,8 +184,11 @@ extraction cell. Existing completed emotion JSONs are skipped.
 7. Add extraction-step progress callbacks or `tqdm` to the optimizer.
 8. Implement non-nested inline tags through segment synthesis and 10-30 ms
    crossfades.
-9. Add automated tests for intensity zero, normalization, gain, broadcasting,
-   malformed tags, and neutral preservation.
+9. ~~Add automated tests for intensity zero, normalization, gain,
+   broadcasting, and neutral preservation~~ — done for the blending layer:
+   `py/test_style.py` (21 tests) and `web/helper.test.js` (17 tests), both
+   passing, cross-checked against each other to float32 rounding. Tests for
+   malformed inline tags remain outstanding, with tags themselves deferred.
 10. Expand the backlog with `happy`, `sad`, `calm`, `fearful`, and `excited`.
 
 ## Important Cautions
