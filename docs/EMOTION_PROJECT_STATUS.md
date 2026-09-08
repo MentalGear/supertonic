@@ -28,9 +28,13 @@ continuous strength and a path toward inline phrase-level emotion tags.
 
 Python:
 
-- `py/helper.py`: `Style.with_emotion()` validates shapes, broadcasts a single
-  delta across batches, blends TTL, normalizes TTL rows, and leaves DP neutral
-  by default.
+- `py/helper.py`: `Style.with_deltas()` is now the primary API — it accumulates
+  any number of `(delta, weight)` pairs in pre-normalization space and restores
+  per-row norms once at the end, so composition is order-independent and a
+  zero weight is an exact no-op. `Style.with_emotion()` remains as a
+  backward-compatible single-delta wrapper keeping the `[0, 1]` intensity
+  constraint. DP stays neutral unless `include_duration` is set, in which case
+  it now receives the same per-row projection as TTL.
 - `py/example_onnx.py`: supports `--emotion`, `--emotion-style`,
   `--emotion-intensity`, and `--emotion-include-duration`.
 - `py/create_emotion_style.py`: creates a style-difference JSON from neutral and
@@ -131,7 +135,9 @@ extraction cell. Existing completed emotion JSONs are skipped.
 
 ## Next Best Steps
 
-1. Add `gain` as a real parameter to Python and web `with_emotion()` APIs.
+1. ~~Add `gain` as a real parameter~~ — superseded. `with_deltas()` accepts any
+   finite weight, including values above 1, so a separate gain parameter is no
+   longer needed. Done.
 2. Generate audio directly with canonical names and update `manifest.json`
    automatically.
 3. Add clipping, RMS/loudness, duration, and finite-audio checks.

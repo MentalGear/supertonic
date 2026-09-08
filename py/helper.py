@@ -1,4 +1,5 @@
 import json
+import numbers
 import os
 import time
 from contextlib import contextmanager
@@ -136,6 +137,113 @@ class Style:
         self.ttl = style_ttl_onnx
         self.dp = style_dp_onnx
 
+    def _validate_delta(self, delta: "Style", label: str = "Delta") -> None:
+        """Check that ``delta`` can be blended into this style.
+
+        ``label`` only selects the wording of the error messages so the legacy
+        :meth:`with_emotion` API keeps its exact messages.
+        """
+        if not isinstance(delta, Style):
+            raise ValueError(f"{label} must be a Style instance")
+        if self.ttl.shape[1:] != delta.ttl.shape[1:]:
+            raise ValueError(
+                f"{label} TTL shape {delta.ttl.shape} does not match voice TTL shape {self.ttl.shape}"
+            )
+        if self.dp.shape[1:] != delta.dp.shape[1:]:
+            raise ValueError(
+                f"{label} DP shape {delta.dp.shape} does not match voice DP shape {self.dp.shape}"
+            )
+        if delta.ttl.shape[0] not in (1, self.ttl.shape[0]):
+            raise ValueError(
+                f"{label} TTL batch {delta.ttl.shape[0]} does not match voice batch {self.ttl.shape[0]}"
+            )
+        if delta.dp.shape[0] not in (1, self.dp.shape[0]):
+            raise ValueError(
+                f"{label} DP batch {delta.dp.shape[0]} does not match voice batch {self.dp.shape[0]}"
+            )
+
+    @staticmethod
+    def _restore_row_norms(blended: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        """Rescale every row of ``blended`` back to the norm of the matching
+        row of ``reference``.
+
+        The released presets have unit-norm rows, so for them this is the usual
+        unit projection. Restoring the *original* norm instead of forcing unit
+        norm keeps styles with non-unit rows intact and makes a zero-weight
+        blend an exact identity.
+        """
+        target = np.linalg.norm(reference, axis=-1, keepdims=True)
+        current = np.linalg.norm(blended, axis=-1, keepdims=True).clip(min=1e-8)
+        return (blended / current * target).astype(blended.dtype, copy=False)
+
+    def with_deltas(
+        self,
+        deltas: "list[tuple[Style, float]]",
+        include_duration: bool = False,
+    ) -> "Style":
+        """Blend any number of style-difference vectors into this voice style.
+
+        ``deltas`` is a sequence of ``(delta_style, weight)`` pairs. Every delta
+        is accumulated in pre-normalization space and the per-row norms are
+        restored exactly once, at the end. That makes composition commutative:
+        applying age then emotion equals applying emotion then age (up to
+        floating-point associativity).
+
+        Weights are deliberately *not* clamped to ``[0, 1]`` -- probing beyond
+        the nominal range is a supported experiment. They only have to be
+        finite.
+
+        An empty delta list, or a list whose weights are all exactly zero,
+        returns the base tensors unchanged (no normalization is applied at
+        all), so a neutral setting is an exact no-op.
+
+        ``style_dp`` is left untouched unless ``include_duration`` is True. When
+        duration is included, DP rows get the same per-row norm restoration TTL
+        rows get. NOTE: this DP projection is new -- the previous code never
+        normalized DP -- so ``include_duration=True`` output differs from
+        earlier releases. That is a deliberate correctness fix (DP rows are
+        unit-normalized in the released presets), not a regression.
+        """
+        entries: list[tuple[Style, float]] = []
+        for item in deltas:
+            try:
+                delta, weight = item
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "Each delta must be a (Style, weight) pair"
+                ) from None
+            self._validate_delta(delta)
+            if isinstance(weight, bool) or not isinstance(weight, numbers.Real):
+                raise ValueError("Delta weight must be a finite number")
+            weight = float(weight)
+            if not np.isfinite(weight):
+                raise ValueError("Delta weight must be a finite number")
+            entries.append((delta, weight))
+
+        active = [(delta, weight) for delta, weight in entries if weight != 0.0]
+        if not active:
+            # Exact no-op: never round-trip through the normalize.
+            return Style(self.ttl.copy(), self.dp.copy())
+
+        ttl = self.ttl.copy()
+        for delta, weight in active:
+            ttl = ttl + np.asarray(weight, dtype=ttl.dtype) * np.broadcast_to(
+                delta.ttl, self.ttl.shape
+            )
+        ttl = self._restore_row_norms(ttl, self.ttl)
+
+        if include_duration:
+            dp = self.dp.copy()
+            for delta, weight in active:
+                dp = dp + np.asarray(weight, dtype=dp.dtype) * np.broadcast_to(
+                    delta.dp, self.dp.shape
+                )
+            dp = self._restore_row_norms(dp, self.dp)
+        else:
+            dp = self.dp.copy()
+
+        return Style(ttl, dp)
+
     def with_emotion(
         self,
         emotion_style: "Style",
@@ -144,35 +252,22 @@ class Style:
     ) -> "Style":
         """Blend an emotion style into this voice style.
 
-        ``emotion_style`` is a style-difference vector, with the same tensor
-        shapes as this style. An intensity of 0 keeps the voice unchanged;
-        1 applies the complete difference vector. TTL rows are normalized
-        after blending; duration is unchanged unless explicitly enabled.
+        Backward-compatible wrapper around :meth:`with_deltas` with a single
+        delta. ``emotion_style`` is a style-difference vector, with the same
+        tensor shapes as this style. An intensity of 0 keeps the voice
+        unchanged; 1 applies the complete difference vector. TTL rows are
+        normalized after blending; duration is unchanged unless explicitly
+        enabled.
+
+        The ``[0, 1]`` intensity constraint belongs to this legacy API only --
+        :meth:`with_deltas` accepts any finite weight.
         """
         if not 0.0 <= intensity <= 1.0:
             raise ValueError("Emotion intensity must be between 0.0 and 1.0")
-        if self.ttl.shape[1:] != emotion_style.ttl.shape[1:]:
-            raise ValueError(
-                f"Emotion TTL shape {emotion_style.ttl.shape} does not match voice TTL shape {self.ttl.shape}"
-            )
-        if self.dp.shape[1:] != emotion_style.dp.shape[1:]:
-            raise ValueError(
-                f"Emotion DP shape {emotion_style.dp.shape} does not match voice DP shape {self.dp.shape}"
-            )
-        if emotion_style.ttl.shape[0] not in (1, self.ttl.shape[0]):
-            raise ValueError(
-                f"Emotion TTL batch {emotion_style.ttl.shape[0]} does not match voice batch {self.ttl.shape[0]}"
-            )
-        if emotion_style.dp.shape[0] not in (1, self.dp.shape[0]):
-            raise ValueError(
-                f"Emotion DP batch {emotion_style.dp.shape[0]} does not match voice batch {self.dp.shape[0]}"
-            )
-        emotion_ttl = np.broadcast_to(emotion_style.ttl, self.ttl.shape)
-        emotion_dp = np.broadcast_to(emotion_style.dp, self.dp.shape)
-        ttl = self.ttl + intensity * emotion_ttl
-        ttl = ttl / np.linalg.norm(ttl, axis=-1, keepdims=True).clip(min=1e-8)
-        dp = self.dp + intensity * emotion_dp if include_duration else self.dp.copy()
-        return Style(ttl, dp)
+        self._validate_delta(emotion_style, label="Emotion")
+        return self.with_deltas(
+            [(emotion_style, intensity)], include_duration=include_duration
+        )
 
 
 class TextToSpeech:

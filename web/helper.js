@@ -136,6 +136,76 @@ export class UnicodeProcessor {
 }
 
 /**
+ * Check that `delta` can be blended into `base`.
+ *
+ * `label` only selects the wording of the error messages so the legacy
+ * withEmotion() API keeps its exact messages.
+ */
+function validateDelta(base, delta, label = 'Delta') {
+    if (!delta || !delta.ttl || !delta.dp || !delta.ttl.dims || !delta.dp.dims) {
+        throw new Error(`${label} must be a Style instance`);
+    }
+    if (base.ttl.dims.slice(1).join(',') !== delta.ttl.dims.slice(1).join(',')) {
+        throw new Error(`${label} TTL dimensions do not match the voice style`);
+    }
+    if (base.dp.dims.slice(1).join(',') !== delta.dp.dims.slice(1).join(',')) {
+        throw new Error(`${label} DP dimensions do not match the voice style`);
+    }
+    if (![1, base.ttl.dims[0]].includes(delta.ttl.dims[0]) ||
+        ![1, base.dp.dims[0]].includes(delta.dp.dims[0])) {
+        throw new Error(`${label} batch dimensions do not match the voice style`);
+    }
+}
+
+/**
+ * Add every weighted delta tensor onto a copy of the base tensor, in
+ * pre-normalization space. `key` is 'ttl' or 'dp'. A delta with batch size 1
+ * broadcasts across the whole base batch.
+ */
+function accumulateDeltas(baseTensor, deltas, key) {
+    const out = Float32Array.from(baseTensor.data);
+    const batchSize = baseTensor.dims[0];
+    const stride = out.length / batchSize;
+    for (const { style, weight } of deltas) {
+        const deltaTensor = style[key];
+        const deltaBatch = deltaTensor.dims[0];
+        const deltaStride = deltaTensor.data.length / deltaBatch;
+        for (let batch = 0; batch < batchSize; batch++) {
+            const src = (deltaBatch === 1 ? 0 : batch) * deltaStride;
+            const dst = batch * stride;
+            for (let index = 0; index < stride; index++) {
+                out[dst + index] += weight * deltaTensor.data[src + index];
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Rescale every row of `blended` back to the L2 norm of the matching row of
+ * `referenceData`.
+ *
+ * The released presets have unit-norm rows, so for them this is the usual unit
+ * projection. Restoring the *original* norm instead of forcing unit norm keeps
+ * styles with non-unit rows intact and makes a zero-weight blend an exact
+ * identity.
+ */
+function restoreRowNorms(blended, referenceData, rowLength) {
+    for (let start = 0; start < blended.length; start += rowLength) {
+        let target = 0;
+        let current = 0;
+        for (let index = 0; index < rowLength; index++) {
+            target += referenceData[start + index] ** 2;
+            current += blended[start + index] ** 2;
+        }
+        const scale = Math.sqrt(target) / Math.max(Math.sqrt(current), 1e-8);
+        for (let index = 0; index < rowLength; index++) {
+            blended[start + index] *= scale;
+        }
+    }
+}
+
+/**
  * Style class to hold TTL and DP tensors
  */
 export class Style {
@@ -144,58 +214,88 @@ export class Style {
         this.dp = dpTensor;
     }
 
-    withEmotion(emotionStyle, intensity = 1.0, includeDuration = false) {
-        if (intensity < 0 || intensity > 1) {
-            throw new Error('Emotion intensity must be between 0 and 1');
+    /**
+     * Blend any number of style-difference vectors into this voice style.
+     *
+     * `deltas` is an array of `[deltaStyle, weight]` pairs. Every delta is
+     * accumulated in pre-normalization space and the per-row norms are restored
+     * exactly once, at the end. That makes composition commutative: applying age
+     * then emotion equals applying emotion then age (up to floating-point
+     * associativity).
+     *
+     * Weights are deliberately NOT clamped to [0, 1] -- probing beyond the
+     * nominal range is a supported experiment. They only have to be finite.
+     *
+     * An empty delta list, or a list whose weights are all exactly zero, returns
+     * the base tensors unchanged (no normalization is applied at all), so a
+     * neutral setting is an exact no-op.
+     *
+     * `style_dp` is left untouched unless `includeDuration` is true. When
+     * duration is included, DP rows get the same per-row norm restoration TTL
+     * rows get. NOTE: this DP projection is new -- the previous code never
+     * normalized DP -- so `includeDuration = true` output differs from earlier
+     * releases. That is a deliberate correctness fix (DP rows are unit-normalized
+     * in the released presets), not a regression.
+     *
+     * @param {Array<[Style, number]>} deltas
+     * @param {boolean} includeDuration
+     * @returns {Style}
+     */
+    withDeltas(deltas, includeDuration = false) {
+        if (!Array.isArray(deltas)) {
+            throw new Error('Deltas must be an array of [style, weight] pairs');
         }
-        if (this.ttl.dims.slice(1).join(',') !== emotionStyle.ttl.dims.slice(1).join(',')) {
-            throw new Error('Emotion TTL dimensions do not match the voice style');
-        }
-        if (this.dp.dims.slice(1).join(',') !== emotionStyle.dp.dims.slice(1).join(',')) {
-            throw new Error('Emotion DP dimensions do not match the voice style');
-        }
-        const emotionTtlBatch = emotionStyle.ttl.dims[0];
-        const emotionDpBatch = emotionStyle.dp.dims[0];
-        if (![1, this.ttl.dims[0]].includes(emotionTtlBatch) ||
-            ![1, this.dp.dims[0]].includes(emotionDpBatch)) {
-            throw new Error('Emotion batch dimensions do not match the voice style');
-        }
-        const ttlData = new Float32Array(this.ttl.data.length);
-        const dpData = new Float32Array(this.dp.data.length);
-        const ttlStride = this.ttl.data.length / this.ttl.dims[0];
-        const dpStride = this.dp.data.length / this.dp.dims[0];
-        for (let batch = 0; batch < this.ttl.dims[0]; batch++) {
-            const emotionBatch = emotionTtlBatch === 1 ? 0 : batch;
-            for (let index = 0; index < ttlStride; index++) {
-                ttlData[batch * ttlStride + index] = this.ttl.data[batch * ttlStride + index] +
-                    intensity * emotionStyle.ttl.data[emotionBatch * ttlStride + index];
+        const entries = deltas.map((item) => {
+            if (!Array.isArray(item) || item.length !== 2) {
+                throw new Error('Each delta must be a [style, weight] pair');
             }
-        }
-        for (let batch = 0; batch < this.dp.dims[0]; batch++) {
-            const emotionBatch = emotionDpBatch === 1 ? 0 : batch;
-            for (let index = 0; index < dpStride; index++) {
-                dpData[batch * dpStride + index] = this.dp.data[batch * dpStride + index] +
-                    intensity * emotionStyle.dp.data[emotionBatch * dpStride + index];
+            const [style, weight] = item;
+            validateDelta(this, style);
+            if (typeof weight !== 'number' || !Number.isFinite(weight)) {
+                throw new Error('Delta weight must be a finite number');
             }
+            return { style, weight };
+        });
+
+        const active = entries.filter((entry) => entry.weight !== 0);
+        if (active.length === 0) {
+            // Exact no-op: never round-trip through the normalize.
+            return new Style(
+                new ort.Tensor('float32', Float32Array.from(this.ttl.data), this.ttl.dims),
+                new ort.Tensor('float32', Float32Array.from(this.dp.data), this.dp.dims)
+            );
         }
-        for (let batch = 0; batch < this.ttl.dims[0]; batch++) {
-            const offset = batch * ttlStride;
-            let norm = 0;
-            for (let index = 0; index < ttlStride; index++) {
-                norm += ttlData[offset + index] ** 2;
-            }
-            norm = Math.max(Math.sqrt(norm), 1e-8);
-            for (let index = 0; index < ttlStride; index++) {
-                ttlData[offset + index] /= norm;
-            }
+
+        const ttlData = accumulateDeltas(this.ttl, active, 'ttl');
+        restoreRowNorms(ttlData, this.ttl.data, this.ttl.dims[this.ttl.dims.length - 1]);
+
+        let dpData;
+        if (includeDuration) {
+            dpData = accumulateDeltas(this.dp, active, 'dp');
+            restoreRowNorms(dpData, this.dp.data, this.dp.dims[this.dp.dims.length - 1]);
+        } else {
+            dpData = Float32Array.from(this.dp.data);
         }
-        if (!includeDuration) {
-            dpData.set(this.dp.data);
-        }
+
         return new Style(
             new ort.Tensor('float32', ttlData, this.ttl.dims),
             new ort.Tensor('float32', dpData, this.dp.dims)
         );
+    }
+
+    /**
+     * Blend an emotion style into this voice style.
+     *
+     * Backward-compatible wrapper around withDeltas() with a single delta. The
+     * [0, 1] intensity constraint belongs to this legacy API only --
+     * withDeltas() accepts any finite weight.
+     */
+    withEmotion(emotionStyle, intensity = 1.0, includeDuration = false) {
+        if (intensity < 0 || intensity > 1) {
+            throw new Error('Emotion intensity must be between 0 and 1');
+        }
+        validateDelta(this, emotionStyle, 'Emotion');
+        return this.withDeltas([[emotionStyle, intensity]], includeDuration);
     }
 }
 
