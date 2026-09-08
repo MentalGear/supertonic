@@ -119,6 +119,12 @@ No generated audio was deleted during cleanup.
   so clipping/naturalness evaluation is required.
 - Python compilation, JavaScript syntax, web build, notebook JSON, and editor
   diagnostics passed at various checkpoints.
+- Phase 0 of [new-plan.md](../new-plan.md), the linearity gate, run on the real
+  ONNX graph on 2026-09-08 via `py/phase0_linearity_gate.py`. Passed. Details
+  in the handoff section below.
+- Phase 0's companion row-structure probe run the same day via
+  `py/phase0_row_locality.py`. `style_ttl` is localized at the row-group level,
+  confirmed by ear. Details in the handoff section below.
 
 ## Colab Recovery
 
@@ -141,33 +147,90 @@ model file, and WAV referenced below lives only on the machine that generated
 it. A new session must download the ONNX assets and preset voices before it can
 synthesize anything at all.
 
-**No audio was generated in the session that produced `new-plan.md` and the
-`with_deltas()` refactor.** That work was static analysis, documentation, and
-numeric tests against synthetic tensors. Nothing has been run through the real
-ONNX graph since the blending change.
+**Phase 0 has been run and it passed (2026-09-08).**
+`py/phase0_linearity_gate.py` interpolated `style_ttl` between presets M1 and
+F1 at weights 0.00 / 0.25 / 0.50 / 0.75 / 1.00 through
+`with_deltas([(delta, w)], include_duration=False)`, holding `style_dp` at M1's,
+and synthesized "The quick brown fox jumps over the lazy dog." (en,
+`total_step=8`, `speed=1.05`, 44.1 kHz, about 3.10 s per clip) at each point.
+Outputs and `manifest.json` are under the ignored
+`py/results/listening_sets/phase0_linearity/`. Endpoints round-trip: `w=0.00`
+recovers M1's TTL bit-for-bit (max abs diff 0.0) and `w=1.00` recovers F1's to
+float32 rounding (max abs diff 2.98e-07). Intermediate weights stay unit-norm
+(`w=0.50` row norms 0.99999976 to 1.0000002), with no clipping, no NaNs, and
+peaks well under 1.0. The set was listened to: the midpoints are clean,
+plausible voices. **Verdict: the gate passes. Linear travel through style space
+is viable on this evidence, so the parametric approach proceeds rather than
+being re-scoped to a learned manifold.** Scope of that evidence is one voice
+pair, one sentence, and one set of inference settings — it does not validate the
+style space generally.
 
-**Any audio produced by the browser path before that change is invalid.**
+**The companion row-structure probe has also been run (2026-09-08).**
+`py/phase0_row_locality.py` built 66 hybrids of M1's `style_ttl` with named rows
+replaced verbatim by F1's — the 50 single-row swaps, contiguous band swaps,
+top-k sets by share of the M1->F1 delta, and an active/inactive split derived
+from per-row spread across all ten shipped presets — on the same text and
+settings as the linearity gate, with the RNG seeded so clips differ only by the
+style tensor. **`style_ttl` is localized at the row-group level, not diffuse.**
+Across the ten presets, per-row spread from the centroid is sharply bimodal, and
+a 24-row active set
+
+```text
+[0, 2, 5, 6, 7, 8, 9, 13, 15, 16, 18, 19, 20, 22, 23, 27, 31, 32, 38, 42, 45,
+ 47, 48, 49]
+```
+
+carries 99.8% of the M1->F1 delta; the other 26 rows are near-constant in every
+released voice. The user listened to the pair and confirmed the split: the
+24-active-row hybrid reads as F1, the 26-frozen-row hybrid still reads as M1.
+No single row is the gender switch — the strongest, row 15, reaches only ~0.30
+travel against 1.00 for the full swap — so future axes should be fitted on the
+~24 active rows (6,144 parameters instead of 12,800) with the rest held fixed. Caveats: swapping only
+the 26 inactive rows still moved the audio a little, so do not hard-zero them
+without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
+`travel` numbers are ordinal, not fractions; and the delta profile itself is one
+voice pair, only the active/inactive split spans all ten presets. Full numbers
+are in [new-plan.md](../new-plan.md) under Phase 0.
+
+Those two runs are the first things to touch the real ONNX graph since the
+`with_deltas()` refactor. The rest of that session's work was static analysis,
+documentation, and numeric tests against synthetic tensors.
+
+The model assets it needed were fetched with
+`git clone https://huggingface.co/Supertone/supertonic-3 assets` (about 392 MB,
+requires git-lfs) and remain gitignored.
+
+**Any audio produced by the browser path before the `with_deltas()` refactor
+is invalid.**
 `web/helper.js` normalized `style_ttl` across the whole 50x256 block instead of
 per row, scaling every row by 1/sqrt(50) — roughly 7.07x too small — at every
 intensity setting including neutral. The web demo's output never matched
 Python's and its "neutral" was never the base voice. Discard any web-generated
 comparison audio.
 
-**Python-generated listening sets are probably still valid, but verify.** The
-old Python code normalized rows to unit norm; the new code restores each row to
-its original pre-blend norm. Those are identical if and only if the preset rows
-are already unit-norm, which `kdrkdrkdr/supertonic.embed` reports is true of the
-released presets. Confirm before trusting existing sets, and regenerate if not:
+**Preset TTL rows are unit-norm — now measured, not assumed.** The Phase 0 run
+reports per-row TTL norms of 1.0000000 for both M1 and F1 (min
+0.9999998211860657, max 1.000000238418579), matching what
+`kdrkdrkdr/supertonic.embed` claims of the released presets. The old code's
+normalize-to-unit and the new code's restore-original-norm therefore agree on
+these presets, so existing Python-generated listening sets are not invalidated
+by the blending change. Only M1 and F1 were measured, and `style_dp` row norms
+were not measured at all. Check any other preset before relying on it:
 
 ```python
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
-**Next action is Phase 0 of [new-plan.md](../new-plan.md)**, the linearity gate:
-interpolate two preset voices at 0.25/0.5/0.75 and listen. It gates the entire
-parametric approach and it is the first thing that needs real assets. The
-sequencing that follows it is in that document, not in this one — this
-roadmap's phase order is superseded.
+**Next action is Phase 2 of [new-plan.md](../new-plan.md): amortized style
+inversion.** Phase 0 has passed, its companion probe is done, and Phase 1's
+composition work already landed with `with_deltas()` (1a is verified above), so
+nothing remains at the front of that plan and its sequencing puts Phase 2 next —
+train `audio -> style_ttl` on optimizer-generated pairs (2a) and run the
+ECAPA/WavLM linear probe with its control task and speaker-disjoint splits (2b).
+Report the probe's per-row R^2 over the 24 active rows separately from the
+aggregate; the near-constant rows would flatter a whole-tensor number. The
+ordering is in that document, not in this one; this roadmap's phase order is
+superseded.
 
 ## Next Best Steps
 

@@ -46,7 +46,12 @@ inline burns the context the main loop needs for judgment.
   generated from the Python one, and the two silently diverged once already
   (the browser normalized `style_ttl` over the whole 50x256 block instead of
   per row). When you touch blending, change both files and add a numeric
-  cross-check that the two agree.
+  cross-check that the two agree. A third mirror now exists: `with_deltas_np`
+  in the `style_tools.py` module that `docs/style_extraction_colab.ipynb`
+  writes into its Colab workspace. It is a mirror, not a fork — the
+  presentation-axis notebook cross-checks it numerically against
+  `Style.with_deltas` at every weight it applies, and that check is the thing
+  keeping three copies honest. Update it with the other two.
 - **`with_deltas()` / `withDeltas()` is the blending API.** It takes any number
   of `(delta, weight)` pairs, accumulates them in pre-normalization space, and
   restores per-row norms exactly once at the end — so composition is order
@@ -58,6 +63,10 @@ inline burns the context the main loop needs for judgment.
   `python3 -m unittest discover -s py -p "test_*.py"`.
 - **Do not commit ignored assets**: ONNX models, recordings, extracted style
   JSONs, generated WAVs.
+- **Vocoder sampling is unseeded.** `sample_noisy_latent()` in `py/helper.py`
+  draws `np.random.randn` with no seed, so rendering the same style tensor twice
+  gives audibly different waveforms. Any "is this the same as before" check must
+  be made at the tensor level, not on audio, unless the RNG is explicitly seeded.
 - Generated audio follows the naming and manifest convention in
   [docs/EMOTION_ROADMAP.md](docs/EMOTION_ROADMAP.md). Keep comparison sets on
   identical text, base voice, and inference settings.
@@ -70,4 +79,13 @@ inline burns the context the main loop needs for judgment.
   weight, and inference settings, so each clip is identifiable without
   cross-referencing a file tree. When a set is large, send the endpoints and
   midpoint rather than all of it, and say what was omitted.
+- **Publish listening sets as an Artifact, not only as loose files.** Whenever a
+  set needs a verdict by ear, build a listening bench: the clips embedded as
+  data URIs and playable in order, labelled with what each one is, the run
+  parameters and any numeric profile alongside them, and the decision the
+  listener is being asked to make stated on the page. Playing one clip stops the
+  others so comparison is A/B rather than overlapping. Attach the raw WAVs too —
+  the page is for judging, the files are for keeping. Reuse the established
+  visual system across benches (IBM Plex Sans/Mono with Newsreader, teal accent
+  on cool neutrals) so successive sets read as one series.
 - Active research direction: [new-plan.md](new-plan.md).

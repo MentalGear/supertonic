@@ -1,6 +1,7 @@
 # Parametric Voice Space — Research Plan
 
-Status: proposal. Supersedes the `new-plan` sketch.
+Status: proposal. Supersedes the `new-plan` sketch. Phase 0 was run on
+2026-09-08 and passed; see the result recorded under that phase.
 
 ## Goal
 
@@ -93,6 +94,30 @@ to phases 2+ on the assumption it will work out.
 
 Record the outputs under a listening set with the existing manifest convention.
 
+### Result: passed (2026-09-08)
+
+Run with `py/phase0_linearity_gate.py`. `style_ttl` was interpolated between
+presets M1 and F1 at 0.00 / 0.25 / 0.50 / 0.75 / 1.00 via
+`with_deltas([(delta, w)], include_duration=False)`, with `style_dp` held at
+M1's; text "The quick brown fox jumps over the lazy dog." (en, `total_step=8`,
+`speed=1.05`, 44.1 kHz, about 3.10 s per clip). Outputs and `manifest.json` are
+under the ignored `py/results/listening_sets/phase0_linearity/`.
+
+Numerically: `w=0.00` recovers M1's TTL bit-for-bit (max abs diff 0.0) and
+`w=1.00` recovers F1's to float32 rounding (max abs diff 2.98e-07);
+intermediate weights stay unit-norm (`w=0.50` row norms 0.99999976 to
+1.0000002); no clipping, no NaNs, peaks well under 1.0. By ear, the midpoints
+are clean, plausible voices.
+
+**Verdict: the gate passes. Linear travel through style space is viable on this
+evidence, so the parametric approach proceeds rather than being re-scoped to a
+learned manifold.** The evidence is one voice pair, one sentence, and one set of
+inference settings — it clears the gate, it does not validate the style space
+generally.
+
+The companion row-structure experiment below has since been run too; its result
+is recorded after it.
+
 ### Companion experiment: is the 50x256 grid structured?
 
 The architecture is now partly known, and it changes the rationale for this
@@ -145,10 +170,77 @@ Diffuse is the likelier outcome given the query interpretation above, but there
 is a real precedent for the other side: *Eigenvoice Synthesis based on Model
 Editing* ([arXiv:2507.03377](https://arxiv.org/abs/2507.03377)) builds an
 orthogonal SVD basis over speaker parameter deltas and finds gender loading
-almost entirely on the sign of one component.
+almost entirely on the sign of one component. (Measured otherwise here — see the
+result below.)
 
 A few hours of work, it could substantially simplify Phase 3, and either way it
 would be the first documented probe of this tensor's structure.
+
+### Companion result: localized (2026-09-08)
+
+Run with `py/phase0_row_locality.py`. M1's `style_ttl` with named rows replaced
+verbatim by F1's, 66 hybrids: the 50 single-row swaps proposed above, contiguous
+band swaps (halves and fifths), top-k sets by share of the M1->F1 squared delta
+(k = 3/5/10/15/20), and an active/inactive split derived from per-row spread
+across all ten shipped presets (M1-M5, F1-F5). Same text and settings as the
+linearity gate, `style_dp` held at M1's, `include_duration=False`. RNG seeded
+before every synthesis, so clips differ only by the style tensor; two renders of
+the same tensor were confirmed bit-identical.
+
+The M1->F1 delta is concentrated. Per-row cos(M1, F1) runs 0.796 min / 0.949
+mean / 0.9999 max, and ten rows carry 61% of the total squared delta against 20%
+for uniform: rows 48, 15, 32, 38, 2, 23, 45, 16, 49, 47. A row's share of the
+delta predicts how far its single-row swap moves the audio (correlation 0.916),
+and 21 of the 50 single-row swaps move it by less than 2% of the M1->F1
+distance.
+
+The activity split is not specific to that pair. Across all ten presets, per-row
+spread from the centroid is sharply bimodal — 21 rows above 0.34, a cliff, then
+24 rows below 0.06. Taking 0.1 as the threshold gives a **24-row active set**:
+
+```text
+[0, 2, 5, 6, 7, 8, 9, 13, 15, 16, 18, 19, 20, 22, 23, 27, 31, 32, 38, 42, 45,
+ 47, 48, 49]
+```
+
+The complementary 26 rows are near-constant in every released voice; rows 3, 12,
+17, 24, 33, 34, 36, 37, 40 and 46 are the deadest (pairwise cos >= 0.996 across
+presets). Sparse edits nearly suffice: the top-20 rows (98.8% of the delta)
+reach 0.78 travel and the 24-row active set (99.8%) reaches 0.79, against 1.00
+for the full swap. Contiguous band swaps only track their delta content
+(0.24-0.51 travel), so the active rows are **scattered, not contiguous** — group
+by measured activity, never by index range.
+
+No single row is the gender switch. The strongest, row 15, reaches only ~0.30
+travel. That cuts against the Eigenvoice precedent cited above: gender here is
+roughly twenty scattered components, not one sign bit.
+
+The split was confirmed by ear. Swapping the 24 active rows produces a hybrid
+that reads as F1; freezing them and swapping the other 26 produces one that
+still reads as M1.
+
+**Verdict: localized at the row-group level. Derive future axes on the ~24
+active rows and hold the rest fixed — a 6,144-parameter fit instead of 12,800,
+better conditioned, and "change age without changing identity" gets a structural
+handle rather than needing post-hoc orthogonalization.**
+
+Caveats:
+
+- **The inactive rows are not free to zero.** Swapping only the 26 inactive rows
+  still moved the audio by 0.14 travel. Freeze them, but do not hard-zero them
+  without a listening check.
+- **The distance metric saturates.** Distances are mean |Δ log-STFT|; the 50
+  single-row distances sum to 4.80 against an endpoint distance of 0.97. Treat
+  `travel` as ordinal, not as a fraction of the way to the target.
+- **Scope.** The delta profile — the top-ten rows, the 0.916 correlation, the
+  travel figures — is one voice pair, M1/F1, on one sentence. Only the
+  active/inactive split is drawn from all ten presets. Expect the active set to
+  hold; do not assume another pair's delta lands on the same ten rows.
+
+Row norms were incidentally re-checked across all 66 tensors: worst deviation
+from unit norm was 2.4e-07, and that worst case was the unmodified M1 endpoint,
+i.e. the float32 precision of the shipped presets rather than an artifact of
+swapping.
 
 ## Phase 1: Fix the Composition Algebra
 
@@ -187,6 +279,12 @@ emotion listening set rests on it, so measure rather than assume. Note also
 that `style_dp`'s 8 rows are unit-normalized too, which the current blending
 code does not account for: **DP deltas will need the same row projection once
 Phase 3 starts moving them.**
+
+**Verified (2026-09-08).** The Phase 0 run measured per-row TTL norms for M1
+and F1: all 1.0000000 (min 0.9999998211860657, max 1.000000238418579). Zero
+weight is an exact no-op on these presets, so no recorded "neutral" was
+silently a different voice. Only M1 and F1 were measured, and `style_dp` row
+norms were not, so the DP caveat above still stands.
 
 ### 1b. Normalize-after-add is non-commutative
 
@@ -268,7 +366,11 @@ A bare R^2 here would be meaningless. Two controls are mandatory:
 
 Report per-row R^2 as well as overall — a flat aggregate can hide that only a
 few of the 50 rows are linearly predictable, which feeds directly into the
-row-structure question in Phase 0.
+row-structure question in Phase 0. Phase 0's companion probe has since answered
+that question — 24 of the 50 rows carry essentially all preset-to-preset
+variation — so report R^2 over the active set separately from the aggregate;
+the 26 near-constant rows are trivially predictable and will inflate a
+whole-tensor number.
 
 - **High linear R^2** -> the two spaces are related by an affine map, and
   directions established in ECAPA space transfer into style space by
@@ -365,6 +467,14 @@ So do not assume a root-attribute set. Derive it:
    monotonicity probe rather than assuming it worked, and budget for an
    adversarial or MI-penalty fallback if residual gender drift survives under
    the age axis.
+
+Both estimators can be restricted to the 24 active rows measured in Phase 0
+(6,144 parameters rather than 12,800), holding the rest at the base voice. That
+does not change the plan above; it changes what it is fitted over. Note also
+that the probe found gender spread across roughly twenty rows rather than
+concentrated in one component, so the Eigenvoice single-component precedent
+should not be read as a prediction that a presentation axis will be similarly
+compact here.
 
 ### The duration tensor cannot stay neutral
 
@@ -584,7 +694,9 @@ README already sells emotion as this fork's differentiator.
    well-posed axis before either demographic axis touches it.
 4. **Presentation axis** — the first between-speaker axis, but the easiest
    one: gender is ~99-100% linearly decodable from ECAPA, so the Phase 2b
-   probe shortcut actually applies here.
+   probe shortcut actually applies here. Phase 0's probe adds that in style
+   space the M1->F1 difference is spread over roughly twenty rows, not one
+   component — decodable, but not a single knob to find.
 5. **Age axis** — last, deliberately. No prior art, no within-speaker
    pairing, a hard dependency on moving `style_dp`, and corpora not yet
    acquired (SeniorTalk, a child corpus).
@@ -639,7 +751,8 @@ should be re-checked before anything depends on them.
   directions over artificial speaker embeddings; the `z' = z + Ux` precedent.
 - **[arXiv:2507.03377](https://arxiv.org/abs/2507.03377)** — eigenvoice model
   editing; gender loading on a single SVD component, the case for localized
-  structure.
+  structure. Did not replicate here: gender is localized to row groups but
+  spread across roughly twenty of them.
 - **[arXiv:1909.03368](https://arxiv.org/abs/1909.03368)** — Hewitt & Liang,
   control tasks and probe selectivity. Phase 2b's methodology.
 - **[arXiv:2101.05278](https://arxiv.org/abs/2101.05278)** — GAN inversion
