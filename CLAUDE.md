@@ -74,4 +74,13 @@ inline burns the context the main loop needs for judgment.
   weight, and inference settings, so each clip is identifiable without
   cross-referencing a file tree. When a set is large, send the endpoints and
   midpoint rather than all of it, and say what was omitted.
+- **Publish listening sets as an Artifact, not only as loose files.** Whenever a
+  set needs a verdict by ear, build a listening bench: the clips embedded as
+  data URIs and playable in order, labelled with what each one is, the run
+  parameters and any numeric profile alongside them, and the decision the
+  listener is being asked to make stated on the page. Playing one clip stops the
+  others so comparison is A/B rather than overlapping. Attach the raw WAVs too —
+  the page is for judging, the files are for keeping. Reuse the established
+  visual system across benches (IBM Plex Sans/Mono with Newsreader, teal accent
+  on cool neutrals) so successive sets read as one series.
 - Active research direction: [new-plan.md](new-plan.md).
