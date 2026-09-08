@@ -1,6 +1,7 @@
 # Parametric Voice Space — Research Plan
 
-Status: proposal. Supersedes the `new-plan` sketch.
+Status: proposal. Supersedes the `new-plan` sketch. Phase 0 was run on
+2026-09-08 and passed; see the result recorded under that phase.
 
 ## Goal
 
@@ -92,6 +93,29 @@ Synthesize identical text at each point.
 to phases 2+ on the assumption it will work out.
 
 Record the outputs under a listening set with the existing manifest convention.
+
+### Result: passed (2026-09-08)
+
+Run with `py/phase0_linearity_gate.py`. `style_ttl` was interpolated between
+presets M1 and F1 at 0.00 / 0.25 / 0.50 / 0.75 / 1.00 via
+`with_deltas([(delta, w)], include_duration=False)`, with `style_dp` held at
+M1's; text "The quick brown fox jumps over the lazy dog." (en, `total_step=8`,
+`speed=1.05`, 44.1 kHz, about 3.10 s per clip). Outputs and `manifest.json` are
+under the ignored `py/results/listening_sets/phase0_linearity/`.
+
+Numerically: `w=0.00` recovers M1's TTL bit-for-bit (max abs diff 0.0) and
+`w=1.00` recovers F1's to float32 rounding (max abs diff 2.98e-07);
+intermediate weights stay unit-norm (`w=0.50` row norms 0.99999976 to
+1.0000002); no clipping, no NaNs, peaks well under 1.0. By ear, the midpoints
+are clean, plausible voices.
+
+**Verdict: the gate passes. Linear travel through style space is viable on this
+evidence, so the parametric approach proceeds rather than being re-scoped to a
+learned manifold.** The evidence is one voice pair, one sentence, and one set of
+inference settings — it clears the gate, it does not validate the style space
+generally.
+
+The companion row-structure experiment below is still unrun.
 
 ### Companion experiment: is the 50x256 grid structured?
 
@@ -187,6 +211,12 @@ emotion listening set rests on it, so measure rather than assume. Note also
 that `style_dp`'s 8 rows are unit-normalized too, which the current blending
 code does not account for: **DP deltas will need the same row projection once
 Phase 3 starts moving them.**
+
+**Verified (2026-09-08).** The Phase 0 run measured per-row TTL norms for M1
+and F1: all 1.0000000 (min 0.9999998211860657, max 1.000000238418579). Zero
+weight is an exact no-op on these presets, so no recorded "neutral" was
+silently a different voice. Only M1 and F1 were measured, and `style_dp` row
+norms were not, so the DP caveat above still stands.
 
 ### 1b. Normalize-after-add is non-commutative
 

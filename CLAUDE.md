@@ -58,6 +58,10 @@ inline burns the context the main loop needs for judgment.
   `python3 -m unittest discover -s py -p "test_*.py"`.
 - **Do not commit ignored assets**: ONNX models, recordings, extracted style
   JSONs, generated WAVs.
+- **Vocoder sampling is unseeded.** `sample_noisy_latent()` in `py/helper.py`
+  draws `np.random.randn` with no seed, so rendering the same style tensor twice
+  gives audibly different waveforms. Any "is this the same as before" check must
+  be made at the tensor level, not on audio, unless the RNG is explicitly seeded.
 - Generated audio follows the naming and manifest convention in
   [docs/EMOTION_ROADMAP.md](docs/EMOTION_ROADMAP.md). Keep comparison sets on
   identical text, base voice, and inference settings.
