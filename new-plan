@@ -1,0 +1,15 @@
+## Research 
+
+- based on/docs which has good results doing dynamic emotion adaptation.
+
+Evaluate if the entire engine could be made parametric so that things like age and gender could also be dynamically adjusted ? Then there maybe wouldn't be a need for any specific voices, but it can be composed at will during runtime / before runtime with additonal input. What do you think about this and order it at additional computational needs during runtime ?
+
+some open questions:
+
+- what would a good base voice be?
+
+- are perceived-age and vocal-presentation true attributes or are there root-level attributes that we can derived these from? what sjould be the base styles/modules ?
+
+- what datasets are best fit for this?
+
+- could the supertonic's original embedder be retrieved by using something like vec2vec and would it be useful?
