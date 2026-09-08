@@ -122,6 +122,9 @@ No generated audio was deleted during cleanup.
 - Phase 0 of [new-plan.md](../new-plan.md), the linearity gate, run on the real
   ONNX graph on 2026-09-08 via `py/phase0_linearity_gate.py`. Passed. Details
   in the handoff section below.
+- Phase 0's companion row-structure probe run the same day via
+  `py/phase0_row_locality.py`. `style_ttl` is localized at the row-group level,
+  confirmed by ear. Details in the handoff section below.
 
 ## Colab Recovery
 
@@ -162,7 +165,34 @@ being re-scoped to a learned manifold.** Scope of that evidence is one voice
 pair, one sentence, and one set of inference settings — it does not validate the
 style space generally.
 
-That run is the first thing to touch the real ONNX graph since the
+**The companion row-structure probe has also been run (2026-09-08).**
+`py/phase0_row_locality.py` built 66 hybrids of M1's `style_ttl` with named rows
+replaced verbatim by F1's — the 50 single-row swaps, contiguous band swaps,
+top-k sets by share of the M1->F1 delta, and an active/inactive split derived
+from per-row spread across all ten shipped presets — on the same text and
+settings as the linearity gate, with the RNG seeded so clips differ only by the
+style tensor. **`style_ttl` is localized at the row-group level, not diffuse.**
+Across the ten presets, per-row spread from the centroid is sharply bimodal, and
+a 24-row active set
+
+```text
+[0, 2, 5, 6, 7, 8, 9, 13, 15, 16, 18, 19, 20, 22, 23, 27, 31, 32, 38, 42, 45,
+ 47, 48, 49]
+```
+
+carries 99.8% of the M1->F1 delta; the other 26 rows are near-constant in every
+released voice. The user listened to the pair and confirmed the split: the
+24-active-row hybrid reads as F1, the 26-frozen-row hybrid still reads as M1.
+No single row is the gender switch — the strongest, row 15, reaches only ~0.30
+travel against 1.00 for the full swap — so future axes should be fitted on the
+~24 active rows (6,144 parameters instead of 12,800) with the rest held fixed. Caveats: swapping only
+the 26 inactive rows still moved the audio a little, so do not hard-zero them
+without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
+`travel` numbers are ordinal, not fractions; and the delta profile itself is one
+voice pair, only the active/inactive split spans all ten presets. Full numbers
+are in [new-plan.md](../new-plan.md) under Phase 0.
+
+Those two runs are the first things to touch the real ONNX graph since the
 `with_deltas()` refactor. The rest of that session's work was static analysis,
 documentation, and numeric tests against synthetic tensors.
 
@@ -191,13 +221,16 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
-**Next action is in [new-plan.md](../new-plan.md), which is now past its
-gate.** Phase 0 has passed and Phase 1's composition work already landed with
-`with_deltas()` (1a is verified above). What remains unrun at the front of that
-plan is Phase 0's companion experiment — the 50-row structure probe, cheap and
-still undone — after which its sequencing puts Phase 2, amortized style
-inversion, next. The ordering is in that document, not in this one; this
-roadmap's phase order is superseded.
+**Next action is Phase 2 of [new-plan.md](../new-plan.md): amortized style
+inversion.** Phase 0 has passed, its companion probe is done, and Phase 1's
+composition work already landed with `with_deltas()` (1a is verified above), so
+nothing remains at the front of that plan and its sequencing puts Phase 2 next —
+train `audio -> style_ttl` on optimizer-generated pairs (2a) and run the
+ECAPA/WavLM linear probe with its control task and speaker-disjoint splits (2b).
+Report the probe's per-row R^2 over the 24 active rows separately from the
+aggregate; the near-constant rows would flatter a whole-tensor number. The
+ordering is in that document, not in this one; this roadmap's phase order is
+superseded.
 
 ## Next Best Steps
 
