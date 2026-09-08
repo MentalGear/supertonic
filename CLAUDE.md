@@ -61,4 +61,13 @@ inline burns the context the main loop needs for judgment.
 - Generated audio follows the naming and manifest convention in
   [docs/EMOTION_ROADMAP.md](docs/EMOTION_ROADMAP.md). Keep comparison sets on
   identical text, base voice, and inference settings.
+- **Post generated audio into the chat.** Every WAV produced for evaluation —
+  the Phase 0 interpolation gate, emotion listening sets, each axis's
+  monotonicity sweep — must be surfaced in the conversation, not merely written
+  to `py/results/`. Files on disk are unhearable: the user cannot judge them,
+  and these phases are judged by ear before they are judged by any metric. Send
+  the audio itself, with the manifest line naming base voice, text, axis,
+  weight, and inference settings, so each clip is identifiable without
+  cross-referencing a file tree. When a set is large, send the endpoints and
+  midpoint rather than all of it, and say what was omitted.
 - Active research direction: [new-plan.md](new-plan.md).

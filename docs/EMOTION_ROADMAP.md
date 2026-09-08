@@ -68,6 +68,12 @@ strengths: 0.25, 0.5, 0.75, 1.0
 gains: 1.0, 2.0, 3.0
 ```
 
+Generated audio must also be posted into the chat, not only written to
+`py/results/`. A listening set nobody can hear has not been delivered — the
+strength sweeps, the Phase 0 interpolation gate, and every later axis sweep are
+judged by ear first. Send the clips with their manifest details attached; for a
+large matrix send the endpoints and midpoint and say what was left out.
+
 The canonical M1 set has a `manifest.json` beside the WAV files. It includes
 the gain `2.0` and `3.0` experiments, marked as experimental. Older one-off
 outputs are retained under `py/results/legacy/`.
