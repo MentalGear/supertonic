@@ -95,9 +95,40 @@ Record the outputs under a listening set with the existing manifest convention.
 
 ### Companion experiment: is the 50x256 grid structured?
 
-Nothing yet explains why TTL has 50 rows, or what they individually carry. The
-per-row normalization implies they are meant to be independent unit vectors,
-which suggests they may specialize.
+The architecture is now partly known, and it changes the rationale for this
+experiment without removing the need for it.
+
+The SupertonicTTS paper ([arXiv:2503.23108](https://arxiv.org/abs/2503.23108),
+Appendix A.2) states that "50 learnable vectors ... are used in the first
+attention block" of the reference encoder, and that "these 50 vectors are
+reused as keys in the VF estimator." So the 50 rows are **learnable attention
+queries in a Perceiver-style bottleneck** — not time steps, not a layer stack,
+and not slots designed to carry separable human-interpretable attributes. Our
+local code agrees on the consumption pattern: `style_ttl` feeds the text
+encoder and the vector estimator, `style_dp` feeds only the duration
+predictor (`py/helper.py:228-247`).
+
+Two caveats on that, both material:
+
+- **The paper describes a predecessor.** It covers SupertonicTTS (44M params,
+  English-only) and gives the learnable vectors dimension **128**. This repo
+  runs Supertonic 3 (~99M, 31 languages) with `style_ttl` at 50 x **256**. The
+  row count carries over; the width does not. No architecture paper for v3 was
+  found, so treat the query interpretation as strongly suggested, not
+  confirmed for our weights.
+- **Per-row L2 normalization is not stated in the paper.** It is observed in
+  the released presets and enforced by community extractors, but the reason is
+  inferred. Unit-norming attention keys is ordinary magnitude stabilization,
+  so it is **not** evidence that rows specialize semantically — which is the
+  opposite of the inference an earlier draft of this plan drew from it.
+
+That weakens the prior for a localized outcome but raises the value of
+measuring, because nobody has. All three community extraction tools
+(`kdrkdrkdr/supertonic.embed`, `saurabhv749/supertonic3-voice-clone`,
+`Fawzan09/voice-builder-for-supertonic-3`) optimize `style_ttl` as a single
+monolithic 12,800-parameter block against one global loss, none treats rows
+independently, and none reports which rows moved. No public per-row ablation of
+this tensor exists.
 
 Cheap probe: take voices A and B, and synthesize 50 hybrids where hybrid `i`
 uses A's TTL with row `i` replaced by B's. Measure and listen.
@@ -110,7 +141,14 @@ uses A's TTL with row `i` replaced by B's. Measure and listen.
   a structural property rather than something orthogonalization has to
   enforce after the fact.
 
-This is a few hours of work and it could substantially simplify phase 3.
+Diffuse is the likelier outcome given the query interpretation above, but there
+is a real precedent for the other side: *Eigenvoice Synthesis based on Model
+Editing* ([arXiv:2507.03377](https://arxiv.org/abs/2507.03377)) builds an
+orthogonal SVD basis over speaker parameter deltas and finds gender loading
+almost entirely on the sign of one component.
+
+A few hours of work, it could substantially simplify Phase 3, and either way it
+would be the first documented probe of this tensor's structure.
 
 ## Phase 1: Fix the Composition Algebra
 
@@ -362,28 +400,44 @@ where the axis is hardest would produce confident nonsense.
 Licensing is not a selection criterion — this work is going out open-source.
 Select purely on speaker count, metadata quality, and recording conditions.
 
-| Dataset | Speakers | Metadata | Role |
+**The single biggest correction to this plan came from checking VCTK.** Its
+`speaker-info.txt` gives ages spanning only **18-38**, and the distribution is
+worse than that range implies: the bulk sits at 21-24 (26 speakers aged 22, 29
+aged 23), with a handful above 26 and single speakers at 27, 32, 33 and 38.
+VCTK is effectively an early-twenties corpus. An earlier draft made it the
+first-pass corpus for deriving axes; **for the age axis that is impossible**,
+and no amount of clean studio audio fixes it.
+
+| Dataset | Speakers | Age metadata | Role |
 |---|---|---|---|
-| **VCTK** | 110 | age, gender, accent | First pass. Studio-clean, best quality-per-speaker, exactly the right shape for deriving initial axes. |
-| **Common Voice** | very large | self-reported age bracket, gender, many languages | The only realistic source for an age axis at scale, and the only route to axes that hold across languages. |
-| **LibriTTS-R** | ~1000+ | gender (no age) | Gender axis and identity-space PCA. Restored audio, so cleaner than LibriTTS. |
-| **CREMA-D** | 91 | age, gender, ethnicity | Keeps emotion and demographics in one frame — lets emotion deltas be measured against demographic controls rather than confounded with them. |
-| **RAVDESS** | 24 | acted emotion | Already extracted. Keep for emotion continuity; too few speakers and too acted for demographic axes. |
-| **ESD** | 20 | emotion, EN/ZH | Extending emotion multilingually, later. |
+| **VCTK** | ~107 | real ages, but **18-38, bulk 21-24** | Presentation axis and identity-space structure only. Studio-clean and well-labeled, but carries no age signal to learn from. |
+| **CREMA-D** | 91 | **real ages 20-74** | Promoted to first-pass for age — the widest genuine age range in the core set, and it keeps emotion and demographics in one frame. Acted, which is a caveat for naturalness. |
+| **SeniorTalk** | 202 | real ages, super-aged | Fills the elderly end no other listed corpus reaches. Conversational rather than studio. |
+| **CSLU Kids** / **ChildMandarin** | 1,100+ (CSLU) | grade/age-based | Fills the child end, absent from every corpus above. |
+| **Common Voice** | very large | self-reported **brackets**, optional and unverified | Scale and multilingual reach, not the primary age source. Highly variable recording conditions. |
+| **Speech Accent Archive** | ~2,500+ | real age, 200+ L1s | Real ages with a consistent mic protocol; single fixed passage limits prosodic variety. |
+| **LibriTTS-R** | ~2,456 | none | Presentation axis and identity-space PCA only. |
+| **RAVDESS** | 24 | acted emotion | Already extracted. Keep for emotion continuity; too few and too acted for demographic axes. |
+| **ESD** | 20 | none | Extending emotion multilingually, later. |
 
 Practical notes:
 
-- **Channel leakage is the main data risk.** Common Voice recording conditions
-  vary enormously and channel characteristics will be absorbed into the style
-  embedding, appearing as a spurious axis. Mitigate by filtering on SNR and by
-  averaging many utterances per speaker so channel cancels while speaker
-  identity persists. Verify by checking whether a top PCA component correlates
-  with recording SNR rather than with any speaker attribute.
-- **Age will be perceived age from coarse brackets, not chronological age.** No
-  corpus provides real ages at scale. State this in the API and docs so the
+- **Revised sequencing.** Start with VCTK for the presentation axis, where it
+  is genuinely the best available, and with CREMA-D for age. Add SeniorTalk and
+  a child corpus before claiming the age axis generalizes — an axis fitted on
+  20-74 will extrapolate badly at exactly the ends users reach for first.
+- **Channel leakage is the main data risk**, and it is well documented that
+  speaker embeddings carry recoverable SNR and recording-condition information.
+  Common Voice is the worst offender. Mitigate by SNR filtering and by
+  averaging many utterances per speaker so channel cancels while identity
+  persists. Verify by probing whether a top PCA component correlates with
+  recording SNR rather than with any speaker attribute — and be prepared for
+  the answer to be yes, in which case adversarial SNR-invariance is the
+  standard next step.
+- **Age will be perceived age.** Real ages exist in CREMA-D, VCTK and the
+  Accent Archive, but coverage is uneven and Common Voice offers only
+  unverified self-reported brackets. State this in the API and docs so the
   parameter is not over-promised.
-- Start with VCTK alone. If clean axes do not emerge from 110 well-labeled
-  studio speakers, adding noisier data will not rescue them.
 
 ## Phase 5: Evaluation
 
@@ -412,14 +466,35 @@ For each axis:
   range and beyond.
 
   An earlier draft assumed intelligibility breaks first and therefore sets the
-  safe range. That is probably backwards.
-  [arXiv:2402.12423](https://arxiv.org/abs/2402.12423) reports that pushing a
-  gender edit past a coefficient threshold caused originally-female voices to
-  stop classifying as female at all — the direction goes **non-monotonic and
-  reverses** before audio quality visibly fails. So monotonicity failure and
-  WER failure are separately located thresholds, and the usable range is the
-  *minimum* of the two. Locate both independently; do not use WER as a proxy
-  for either.
+  safe range. That is probably backwards, and the reason is pointed enough to
+  state carefully.
+
+  [arXiv:2402.12423](https://arxiv.org/abs/2402.12423) (ACL 2024) compares two
+  ways of steering a frozen diffusion TTS model. Its proposed **h-space latent
+  editing** is monotonic: "more samples classified as female as lambda
+  increases." Its **speaker-embedding editing** baseline is not — "when lambda
+  >= 3 even originally female voices are not classified as such."
+
+  **The failing method is the one this plan uses.** Editing `style_ttl` is
+  conditioning-embedding editing, not h-space editing. The published
+  non-monotonic reversal is the documented failure mode of our family of
+  approach, and the method shown to avoid it operates on an internal denoiser
+  activation that a frozen ONNX graph does not expose. So this is not a
+  cautionary note borrowed from a neighbouring technique — it is the closest
+  published result to what we are building, and it is negative.
+
+  Two consequences. First, monotonicity failure and WER failure are separately
+  located thresholds and the usable range is the *minimum* of the two; locate
+  both independently and never use WER as a proxy. Second, treat
+  non-monotonicity as an **expected** outcome to measure for, not a tail risk.
+
+  One reason for cautious optimism: the paper's baseline edits a single
+  speaker vector, whereas `style_ttl` is a 50 x 256 set reused as attention
+  keys throughout the vector-field estimator (confirmed at
+  `py/helper.py:228-247` — it is re-consumed on every sampling step). That is a
+  materially richer conditioning surface than the baseline it failed on. But
+  that is a hypothesis, not a result, and Phase 0 is where it first gets
+  tested.
 - **Cross-language transfer.** Supertonic covers 31 languages, but axes derived
   from English VCTK may not hold elsewhere — speaking-rate norms and F0 ranges
   differ by language, and DP deltas especially may not port. Check at least one
@@ -441,10 +516,11 @@ the observed data are usable.
    refactor to with_deltas()
 2. Amortized inversion: direct encoder + linear probe from ECAPA
    -> report R^2 before proceeding                   [DECISION POINT]
-3. VCTK extraction -> PCA + supervised probes -> orthogonalize axes
+3. VCTK (presentation) + CREMA-D (age) extraction -> PCA + supervised
+   probes -> orthogonalize axes
 4. Build the parselmouth measurement loop
-5. Scale to Common Voice / LibriTTS-R; re-derive emotion deltas
-   multi-speaker
+5. Add SeniorTalk + a child corpus to cover the age extremes; then scale
+   to Common Voice / LibriTTS-R; re-derive emotion deltas multi-speaker
 6. Expose the axes in the Python and web APIs
 ```
 
@@ -464,13 +540,48 @@ synthesizes cleanly; that is the same convexity question as phase 0.
 Derived, entangled, and best obtained empirically with explicit
 orthogonalization rather than assumed.
 
-**Which datasets?** See phase 4. VCTK first, Common Voice for age scale.
+**Which datasets?** See phase 4, and note the correction: VCTK cannot carry the
+age axis (ages 18-38, bulk 21-24). CREMA-D leads for age, VCTK for
+presentation, SeniorTalk and a child corpus for the extremes.
 
 **Could the original embedder be recovered via vec2vec, and would it be
 useful?** The capability is very useful — it is the phase 2 bottleneck-breaker.
 vec2vec is the wrong tool for obtaining it, because paired data is freely
 generatable and supervised regression is strictly easier than unpaired
 translation. See phase 2.
+
+## Key References
+
+Load-bearing sources, with what each is relied on for. Claims marked (v) were
+verified against the primary source; the rest come from a literature sweep and
+should be re-checked before anything depends on them.
+
+- **[arXiv:2402.12423](https://arxiv.org/abs/2402.12423)** — closest published
+  analog. Additive edits on a frozen diffusion TTS model; PCA and
+  mean-difference direction discovery; and (v) the finding that
+  speaker-embedding editing goes non-monotonic at lambda >= 3 while h-space
+  editing stays monotonic. The negative half applies to us.
+- **[arXiv:2503.23108](https://arxiv.org/abs/2503.23108)** — SupertonicTTS
+  architecture. (v) 50 learnable vectors in the reference encoder, reused as
+  keys in the VF estimator. Predecessor model: 44M params, English-only,
+  vector width 128 vs our 256.
+- **[arXiv:2404.06674](https://arxiv.org/abs/2404.06674)** — VoiceShop.
+  Multi-attribute composition at three axes; pairwise/triple leakage protocol
+  adopted in Phase 5.
+- **[arXiv:2310.17502](https://arxiv.org/abs/2310.17502)** — principal
+  directions over artificial speaker embeddings; the `z' = z + Ux` precedent.
+- **[arXiv:2507.03377](https://arxiv.org/abs/2507.03377)** — eigenvoice model
+  editing; gender loading on a single SVD component, the case for localized
+  structure.
+- **[arXiv:1909.03368](https://arxiv.org/abs/1909.03368)** — Hewitt & Liang,
+  control tasks and probe selectivity. Phase 2b's methodology.
+- **[arXiv:2101.05278](https://arxiv.org/abs/2101.05278)** — GAN inversion
+  survey; the optimization/encoder/hybrid taxonomy behind Phase 2a.
+- **Harnsberger et al.** (PMC4505082) — speech rate as the dominant perceived-
+  age cue (partial eta^2 = 0.47); the evidence base for the DP argument.
+- **VCTK `speaker-info.txt`** — (v) ages 18-38, bulk 21-24.
+- **`kdrkdrkdr/supertonic.embed`** — unit-sphere row projection for both
+  tensors; monolithic optimization of style_ttl.
 
 ## Success Criteria
 
