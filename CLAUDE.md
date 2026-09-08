@@ -46,7 +46,12 @@ inline burns the context the main loop needs for judgment.
   generated from the Python one, and the two silently diverged once already
   (the browser normalized `style_ttl` over the whole 50x256 block instead of
   per row). When you touch blending, change both files and add a numeric
-  cross-check that the two agree.
+  cross-check that the two agree. A third mirror now exists: `with_deltas_np`
+  in the `style_tools.py` module that `docs/style_extraction_colab.ipynb`
+  writes into its Colab workspace. It is a mirror, not a fork — the
+  presentation-axis notebook cross-checks it numerically against
+  `Style.with_deltas` at every weight it applies, and that check is the thing
+  keeping three copies honest. Update it with the other two.
 - **`with_deltas()` / `withDeltas()` is the blending API.** It takes any number
   of `(delta, weight)` pairs, accumulates them in pre-normalization space, and
   restores per-row norms exactly once at the end — so composition is order
