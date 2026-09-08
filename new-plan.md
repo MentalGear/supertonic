@@ -328,8 +328,28 @@ voice **will** read as more masculine. This is measured, not hypothetical.
 So do not assume a root-attribute set. Derive it:
 
 1. Extract styles for N labeled speakers using the phase 2 encoder.
-2. Compute speaker-normalized deltas — subtract each speaker's own neutral
-   before averaging, as in the emotion roadmap's phase 2 formula.
+2. Estimate the delta with a **covariate-controlled group-difference
+   estimator** — regress the style tensor on the target attribute with
+   nuisance covariates (sex, accent/L1, corpus, recording condition)
+   included, rather than taking a raw difference of means — or use matched
+   sampling across groups where the corpus allows it. Report group balance
+   on those covariates so a reader can see what the estimate is confounded
+   with.
+
+   The reason this is not the emotion formula: age and presentation deltas
+   are **between-speaker, not within-speaker**. Emotion's formula works
+   because RAVDESS/CREMA-D/ESD record the same actor performing neutral and
+   angry, so `Δ = s_angry - s_neutral` cancels speaker identity exactly —
+   every confound that is a property of the person (vocal tract, accent,
+   mic, session) subtracts out. Nobody is 25 and 70 in one session, and
+   longitudinal corpora at useful scale do not exist, so an age or
+   presentation delta is a difference of group means over different
+   people — sex distribution, accent, recording era, room, and corpus
+   provenance ride along inside it, and no subtraction removes them. This
+   is a harder estimator than emotion's, not merely an untried one, and a
+   better explanation for age control's near-absence from the literature
+   than "nobody tried." Emotion keeps its existing within-speaker formula;
+   it remains the easier case.
 3. Find directions two ways and compare: unsupervised (PCA over the style
    space, then correlate components against measured acoustics) and supervised
    (LDA or linear probe per labeled attribute).
@@ -508,25 +528,72 @@ For each axis:
 Choose default ranges from these measurements. Do not assume the extremes of
 the observed data are usable.
 
+## Relationship to the Emotion Roadmap
+
+This is not two competing projects.
+[docs/EMOTION_ROADMAP.md](docs/EMOTION_ROADMAP.md) and this plan are one
+project in which **emotion is the first axis, not a separate track**. The
+roadmap's own Phase 6 — a continuous arousal/valence/dominance space with
+named emotions as presets within it — is this plan applied to emotion. That
+is where the two documents converge.
+
+Emotion goes first for a specific reason, not by default. **It is the only
+axis whose estimator is well-posed** — the within-speaker point above — and
+it carries the strongest prior art of the three. That makes it the right
+place to validate machinery every axis shares, and the cheapest place to
+discover a failure: the assets, listening sets, and extraction pipeline
+already exist. If the additive-delta approach dies — Phase 0 fails, or the
+non-monotonicity that [arXiv:2402.12423](https://arxiv.org/abs/2402.12423)
+documents for embedding-space editing shows up — this is where it should
+die, before two harder, unproven axes are built on top of it.
+
+But the roadmap's existing *order* is wrong on three items, each obsolete or
+harmful to do first:
+
+| Roadmap item | Problem |
+|---|---|
+| Phase 1: add `gain` to `with_emotion()` | Discarded by the `with_deltas([...])` refactor in this plan's Phase 1c. Building the single-axis API first means writing it twice. |
+| Phase 2: extract 5-20 speakers by optimization | This is exactly the GPU bottleneck the amortized encoder (this plan's Phase 2) removes. Doing it by hand first spends days to avoid building the thing that makes it minutes. |
+| Phase 3: evaluate and select strengths | Runs on top of the `intensity=0.0` normalization bug from this plan's Phase 1a. Every "neutral" reference may be a different voice than the base, and the measurements would need redoing after the fix. |
+
+Roadmap Phase 4 (inline tags, segment synthesis, crossfades) is product
+plumbing orthogonal to every research question here, and belongs last
+regardless of which plan wins.
+
+Emotion carried end-to-end through evaluation is also the deliverable that
+justifies the work externally: **"calibrated multi-speaker emotion control
+with measured quality" is a shippable, self-contained result**, and the
+README already sells emotion as this fork's differentiator.
+
 ## Sequencing
 
-```text
-0. Linearity gate (interpolate two presets)          [KILL GATE]
-1. Fix intensity=0 normalization; accumulate-then-normalize;
-   refactor to with_deltas()
-2. Amortized inversion: direct encoder + linear probe from ECAPA
-   -> report R^2 before proceeding                   [DECISION POINT]
-3. VCTK (presentation) + CREMA-D (age) extraction -> PCA + supervised
-   probes -> orthogonalize axes
-4. Build the parselmouth measurement loop
-5. Add SeniorTalk + a child corpus to cover the age extremes; then scale
-   to Common Voice / LibriTTS-R; re-derive emotion deltas multi-speaker
-6. Expose the axes in the Python and web APIs
-```
+1. **Shared foundation** — Phase 0 (linearity gate) plus Phase 1 (composition
+   fixes: `intensity=0.0` no-op, accumulate-then-normalize-once, the
+   `with_deltas()` refactor). Blocks everything below it, costs about an
+   hour of listening plus a small refactor, and is owed to the emotion work
+   regardless — the normalization bug is corrupting emotion results right
+   now.
+2. **Amortized encoder** (Phase 2) — unblocks multi-speaker extraction for
+   emotion and demographics at once. Turns the roadmap's Phase 2 from a GPU
+   grind into a batch job.
+3. **Emotion end-to-end, through evaluation** — multi-speaker deltas, the
+   monotonicity probe, WER, clipping, the leakage protocol. Build the
+   parselmouth measurement loop here, validated against known references
+   first: every later axis is judged by it, and emotion is where it is
+   cheapest to calibrate. Validates the shared machinery on the one
+   well-posed axis before either demographic axis touches it.
+4. **Presentation axis** — the first between-speaker axis, but the easiest
+   one: gender is ~99-100% linearly decodable from ECAPA, so the Phase 2b
+   probe shortcut actually applies here.
+5. **Age axis** — last, deliberately. No prior art, no within-speaker
+   pairing, a hard dependency on moving `style_dp`, and corpora not yet
+   acquired (SeniorTalk, a child corpus).
 
-Phases 0 and 1 are prerequisites for everything. Phase 2's probe result decides
-how much of phase 3 is needed. Do not start phase 5 scale-up before phase 4
-exists, or there will be no way to tell whether more data helped.
+Layer 1 is a prerequisite for everything that follows it. Layer 2's probe result
+decides how much native derivation layers 4 and 5 each need. Build the
+parselmouth measurement loop before scaling age data collection to
+SeniorTalk and a child corpus (layer 5), or there will be no way to tell
+whether more data helped.
 
 ## Open Questions, Answered
 

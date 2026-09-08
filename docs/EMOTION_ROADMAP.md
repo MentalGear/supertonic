@@ -3,6 +3,16 @@
 This roadmap tracks the path from the current calibrated `angry` and
 `surprised` controls to a robust, general-purpose style system.
 
+**The phases below remain valid; the order does not.**
+[new-plan.md](../new-plan.md) supersedes this roadmap's sequencing, placing
+emotion as the first axis of a shared parametric system rather than a track
+run to completion on its own. Concretely: Phase 1's `gain` parameter is
+replaced by that plan's `with_deltas()` refactor, Phase 2's manual
+multi-speaker extraction should wait for its amortized encoder, and Phase
+3's evaluation should wait for the `intensity=0.0` normalization fix — see
+that document for why each holds. Phase 6 is where the two documents
+converge.
+
 ## Current State
 
 Completed:
