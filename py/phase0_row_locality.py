@@ -68,6 +68,9 @@ BANDS = [(0, 25), (25, 50), (0, 10), (10, 20), (20, 30), (30, 40), (40, 50)]
 # their own per-row centroid. The gap in the sorted profile is wide enough
 # that the exact cut does not matter (see the printed profile).
 ACTIVE_SPREAD_THRESHOLD = 0.10
+# Sparsity curve: how few rows have to move before the voice has fully arrived?
+# Rows are ranked by their share of the total squared A->B delta.
+TOPK_SIZES = [3, 5, 10, 15, 20]
 
 SAVE_DIR = "results/listening_sets/phase0_row_locality"
 SINGLE_ROW_SUBDIR = "single_row"
@@ -186,6 +189,7 @@ def main():
             "inactive_rows": inactive_rows,
             "active_spread_threshold": ACTIVE_SPREAD_THRESHOLD,
         },
+        "topk_sizes": TOPK_SIZES,
         "outputs": [],
     }
 
@@ -244,6 +248,19 @@ def main():
             inactive_rows,
         )
     )
+
+    # Sparsity curve: the k rows carrying the most of the A->B difference.
+    delta_rank = [int(i) for i in np.argsort(-delta_share)]
+    for k in TOPK_SIZES:
+        rows = sorted(delta_rank[:k])
+        entries.append(
+            render(
+                swap_rows(ttl_a, ttl_b, rows),
+                f"topk{k:02d}_from_{VOICE_B_NAME}.wav",
+                f"top-{k} delta rows from {VOICE_B_NAME}",
+                rows,
+            )
+        )
 
     # The doc's literal procedure: 50 single-row hybrids.
     for i in range(N_ROWS):
