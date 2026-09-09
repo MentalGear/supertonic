@@ -219,6 +219,7 @@ def build_reps(d, spec):
 def stage_probe(args):
     d = load_all()
     meta = d["meta"]
+    fitter = P.fit_kernel if args.fitter == "kernel" else P.fit_ridge
     reps = build_reps(d, args.reps)
     for k, v in reps.items():
         print(f"representation {k}: {v.shape[1]} dims", flush=True)
@@ -229,6 +230,7 @@ def stage_probe(args):
 
     report = {
         "experiment": "phase2b_wavlm_probe",
+        "fitter": args.fitter,
         "compare_against": "probe_report.json (ECAPA, identical protocol)",
         "n_total": d["N"],
         "active_rows": d["active_rows"],
@@ -295,15 +297,15 @@ def stage_probe(args):
             res = {
                 "trivial_baselines_family_disjoint": tb,
                 "family_disjoint_split": P.run_probe(X, Ya, itr_fam, ite_fam,
-                                                     d["active_rows"], d["ndim"], P.fit_ridge),
+                                                     d["active_rows"], d["ndim"], fitter),
                 "random_split": P.run_probe(X, Ya, itr_rnd, ite_rnd,
-                                            d["active_rows"], d["ndim"], P.fit_ridge),
+                                            d["active_rows"], d["ndim"], fitter),
             }
             for tag in ("family_disjoint_split", "random_split"):
                 res[tag]["selectivity_r2_trainmean"] = (
                     res[tag]["real"]["r2_trainmean_baseline"]
                     - res[tag]["control_task"]["r2_trainmean_baseline"])
-            Pfull, _ = P.fit_ridge(X[itr_fam], d["Y_full"][itr_fam], X[ite_fam])
+            Pfull, _ = fitter(X[itr_fam], d["Y_full"][itr_fam], X[ite_fam])
             ssr, sst = P.r2_parts(d["Y_full"][ite_fam], Pfull, d["Y_full"][ite_fam].mean(0))
             res["whole_tensor_r2_family_disjoint"] = P.agg_r2(ssr, sst)
             if Y_resid is not None:
@@ -314,10 +316,10 @@ def stage_probe(args):
                 }.items():
                     rtr = np.array([pos[i] for i in gtr])
                     rte = np.array([pos[i] for i in gte])
-                    Pr, _ = P.fit_ridge(X[gtr], Y_resid[rtr], X[gte])
+                    Pr, _ = fitter(X[gtr], Y_resid[rtr], X[gte])
                     ev = P.evaluate(Y_resid[rtr], Y_resid[rte], Pr, d["active_rows"], d["ndim"])
                     Yrc = P.shuffled_targets(Y_resid, np.arange(len(Y_resid)))
-                    Pc, _ = P.fit_ridge(X[gtr], Yrc[rtr], X[gte])
+                    Pc, _ = fitter(X[gtr], Yrc[rtr], X[gte])
                     evc = P.evaluate(Yrc[rtr], Yrc[rte], Pc, d["active_rows"], d["ndim"])
                     res[tag] = {"real": ev, "control_task": evc,
                                 "selectivity_r2": ev["r2_testmean_baseline"]
@@ -412,6 +414,10 @@ def main():
     ap.add_argument("--stage", choices=["sanity", "sweep", "probe", "summary"], required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--conditions", nargs="*", default=None)
+    ap.add_argument("--fitter", choices=["ridge", "kernel"], default="ridge",
+                    help="kernel = RBF kernel ridge, the nonlinear probe. new-plan.md's "
+                         "middle branch: low linear R^2 but high nonlinear R^2 would mean "
+                         "the spaces are related nonlinearly.")
     ap.add_argument("--reps", nargs="*", default=[
         "ecapa", "wavlm:4:meanstd", "wavlm:12:meanstd", "wavlm:24:meanstd",
         "wavlm:4,12,24:meanstd",
