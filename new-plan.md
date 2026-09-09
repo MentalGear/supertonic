@@ -350,9 +350,13 @@ of one fixed operating point.
 Evaluate the encoder against **the optimizer's own converged style**, not only
 against downstream audio quality. Audio metrics masked systematic encoder bias
 in the early image-inversion work, and the same failure is available here. The
-2b result below sharpens this: most directions in style space are close to
-inaudible, so no encoder — this one included — can recover more than the audible
-quotient, and audio metrics would report that as success.
+2b result below sharpens this, though not in the way first recorded: the
+constraint is the *input representation*, not an information ceiling. ECAPA
+cannot see most of what a style direction does — it is trained to be
+prosody-invariant, and most of what a random direction does is prosodic — so
+feed this encoder something that carries prosody, and judge it against the
+converged style, because an audio metric chosen as badly as delta-ECAPA was
+would report the same false negative as success.
 
 **2b. Probe from an off-the-shelf speaker encoder.** Fit a map
 `ECAPA/WavLM embedding -> style_ttl`. Run this explicitly as a **linear probe
@@ -490,16 +494,119 @@ at matched per-row angle from M1, measured as delta-ECAPA: a random direction
 gives 0.028 / 0.059 / 0.354 at eps 0.1 / 0.2 / 0.8, a direction inside the
 preset-PCA subspace gives 0.113 / 0.207 / 0.685, and a direction toward another
 preset gives 0.128 / 0.301 / 0.953 (a full M1->F1 swap is 0.814). Preset-aligned
-directions are 3-5x more audible per unit of travel through style space than
-random ones, and at eps 0.2 the style signal (0.059) is 4.5x *smaller* than the
-text nuisance between two renders of the same style (0.266).
+directions move delta-ECAPA 3-5x further per unit of travel through style space
+than random ones — recorded at the time as "3-5x more audible", which the
+correction below overturns — and at eps 0.2 the style signal (0.059) is 4.5x
+*smaller* than the text nuisance between two renders of the same style (0.266).
 
-So style space is strongly anisotropic. The audible subspace is small and
-roughly aligned with the ~9 dimensions the shipped presets span, and the
-audio-to-style inverse is ill-posed in nearly every other direction. The plan
-did not anticipate this, and it is the reason the probe fails rather than a
-separate finding: most of the target is not recoverable from audio by anything,
-because most of the target is not in the audio.
+**Correction to the mechanism (2026-09-09): audibility was misread.** What
+stood here read the anisotropy as an audibility ceiling — the audible subspace
+is small, most of style space is close to inaudible, and the audio-to-style
+inverse is ill-posed in nearly every other direction, so most of the target is
+not in the audio at all. **That mechanism is wrong; the null it explained is
+not.** Everything above stands, and nothing in this correction weakens it.
+
+**A listener overturned it.** Played the M1 and F1 random rays, the user
+reported the clips clearly differ, increasingly with magnitude, and that what
+changes is which words are emphasised (M1) and per-word loudness (F1), with the
+effect weaker on F1. Every measurement that said "flat" was an utterance-level
+aggregate, which collapses precisely the time axis the effect lives on. The
+follow-up is `py/phase2b_prosody_analysis.py`, `phase2b_prosody_mel.py` and
+`phase2b_prosody_render.py`, reporting to the ignored
+`py/results/phase2b_prosody/` (`prosody_report.json`, `mel_report.json`). It
+confirms the listener on every point.
+
+Frame alignment first, since frame-by-frame comparison is only valid if
+durations are pinned: every ray clip is exactly 136,696 samples, re-rendering
+reproduces the on-disk ray to 3.05e-05 (16-bit quantisation), and envelope
+cross-correlation r(lag 0)/r(peak) stays >= 0.976 across M1's random ray
+(>= 0.91 on F1's).
+
+- **The random ray is loud and prosodic, not quiet.** From M1, eps 0.20 ->
+  3.20: utterance level +0.4 -> +4.9 dB; per-word energy with that level change
+  removed, sd 0.47 -> 2.88 dB and range 1.6 -> 10.1 dB. Median F0 moves only
+  115 -> 119 Hz (+65 cents) and WER stays 0.00. The old battery saw the F0 and
+  the WER and called the ladder flat.
+- **It is far above audibility threshold.** At eps 0.80 — the top of the
+  sampled training range — a random direction moves the log-mel spectrogram by
+  8.4 dB rms, against 16.6 dB for a full M1->F1 identity swap.
+- **The "3-5x more audible" figure was an artifact of the instrument.** It was
+  measured with delta-ECAPA, a speaker-verification embedding trained to be
+  prosody-invariant. On prosody-sensitive measures the same preset-aligned-over-
+  random comparison gives roughly 1.1-3.2x — emphasis contour 1.1-1.8x, per-word
+  emphasis 1.5-3.2x, per-frame spectral shape 1.1-1.8x, LTAS shape 1.5-2.4x —
+  against delta-ECAPA's 3.5-6.5x.
+- **The listener's M1/F1 asymmetry is real, and was recovered independently.**
+  Both bases gain almost the same level (+4.89 vs +4.81 dB at eps 3.20). What
+  differs is whether the emphasis *pattern* holds: M1's per-word profile
+  correlation with its own eps-0.20 shape falls 1.00 -> 0.58 -> 0.56 -> 0.06
+  across eps 0.20 / 0.80 / 1.60 / 3.20 — the ranking reorders, "dog" going from
+  -0.7 to +6.5 dB relative — while F1's holds at 1.00 -> 0.90 -> 0.78 -> 0.67
+  and saturates after eps 1.60, the same pattern scaled. Per-word range 1.6 ->
+  10.1 dB on M1 against 2.4 -> 5.0 dB on F1.
+
+**The two-subspace hypothesis: the strong form is not supported, a graded form
+is.** For it: at matched per-row angle (eps 0.80) a random direction moves F0
+register 20x less than a preset-aligned one (+40 vs +790 cents) and delta-ECAPA
+3.5x less, but emphasis only 1.7x less; and the diff map is more time-localized
+the more preset-aligned the direction (time-concentration at eps 0.20: 0.078
+random, 0.170 toward F1, 0.370 full swap). Against it: the broadband-versus-
+spectral-shape split of the diff is essentially the same across direction
+families (broadband share 0.43-0.62, the lone outlier being F1's smallest
+step), so there is no clean orthogonal
+decomposition into an "identity" and a "prosody" subspace; and at matched
+*total* acoustic change the localisation advantage disappears (random eps 3.20
+at 0.223 against toward-F1 eps 0.20 at 0.170). Random directions do reach F0 and
+timbre — just far along the ray. So: directions differ in what they move and in
+how much travel that costs, not in whether they move anything.
+
+The corrected mechanism, replacing the paragraph this section overturns:
+
+> **Style space is anisotropic in what a direction changes, not in whether it
+> changes anything.** At matched per-row angle from M1, a random direction moves
+> median F0 by 40 cents where a preset-aligned one moves it 790, and moves
+> delta-ECAPA 3.5-6.5x less — but it moves the log-mel spectrogram only ~1.7x
+> less, lifts the utterance level 2.2 dB, and redistributes per-word energy over
+> a 3.7 dB range at eps 0.80. A human listener hears these clips as clearly
+> different, and describes the difference as changing word emphasis rather than
+> changing speaker. The "3-5x more audible" figure was measured with
+> delta-ECAPA, a speaker-verification embedding trained to be prosody-invariant;
+> on prosody-sensitive measures the same comparison gives 1.1-3.2x. So the
+> probe's null means **ECAPA cannot see most of what a style direction does**,
+> not that most style directions do nothing. That still blocks the ECAPA
+> shortcut and still points at the direct encoder (2a), but for a different
+> reason: the target is audible and the *encoder input* was the wrong
+> representation, so a prosody-bearing input (WavLM, or explicit prosodic
+> features) is worth testing before concluding the inverse is ill-posed.
+
+**The consequence that matters: there is no information ceiling on an encoder.**
+The previous wording implied one — that no encoder could recover more than a
+small audible quotient, because the rest was not in the audio. It is in the
+audio. It was not in ECAPA.
+
+**For emotion, the first axis in this plan, this is a positive result.**
+`style_ttl` has demonstrable prosodic reach: random directions give monotone,
+magnitude-scaled changes in utterance level and per-word emphasis while leaving
+intelligibility (WER 0.00) and pitch register intact, and the emphasis effect
+replicates on two further sentences (8.1 and 10.0 dB at eps 0.80). Emphasis and
+loudness axes therefore look reachable without touching the duration tensor.
+Two caveats travel with that: a random direction produces *unstructured*
+emphasis jitter rather than a coherent emotional contour, so this shows the
+lever exists and not that an axis exists; and `style_dp` was pinned throughout,
+so speech rate and timing — a first-order emotion cue — lie outside everything
+measured here.
+
+Caveats on this correction, carried honestly: the ray is one seeded random
+direction per base, so n=1 in direction space (though the four independent
+random directions in `direction_audibility.json` agree on the ECAPA side); word
+boundaries came from faster-whisper tiny.en with a hand-stated repair for one
+collapsed boundary; M1's "dog" window sits at -26 dB in the base, so its large
+dB deltas are partly a small-denominator effect; F0 contours above eps 1.60 are
+unreliable (pyin octave errors), so only the medians are quoted there; and
+`style_dp` was pinned for the whole analysis, so nothing here measures timing.
+
+The general lesson is now in [CLAUDE.md](CLAUDE.md): compare spectrograms before
+aggregates, and level-match before listening.
 
 **Verdict: the optimistic branch is dead and the middle branch with it — the
 kernel probe was worse on unseen voices, with real control-task leakage. This
@@ -508,14 +615,17 @@ from speaker-verification space, and the direct encoder (2a) is the viable
 route. ECAPA only; the WavLM half of this probe is still running, so Phase 2b
 is not closed.**
 
-Two consequences worth carrying forward, one each way. It bounds 2a: a direct
-encoder can only recover the audible quotient of the style, which is why this
-phase's instruction to evaluate it against the optimizer's converged style
-rather than against downstream audio matters more than it looked. And it helps
-Phases 3 and 4: *within* the preset-spanned subspace, embedding distance does
-track style distance (Spearman 0.41, against 0.00 for random directions at every
-magnitude), so deriving axes there is far better conditioned than the
-6,144-parameter framing suggests.
+Two consequences worth carrying forward, one each way. It shapes 2a: the
+constraint is on the encoder's *input representation*, not on how much of the
+style is recoverable in principle, so 2a should be fed something that carries
+prosody (WavLM, or explicit prosodic features) rather than a
+speaker-verification embedding — and this phase's instruction to evaluate it
+against the optimizer's converged style rather than against downstream audio
+still matters, because audio metrics chosen as badly as delta-ECAPA was would
+report the same false negative. And it helps Phases 3 and 4: *within* the
+preset-spanned subspace, embedding distance does track style distance (Spearman
+0.41, against 0.00 for random directions at every magnitude), so deriving axes
+there is far better conditioned than the 6,144-parameter framing suggests.
 
 Still open:
 
@@ -604,11 +714,14 @@ So do not assume a root-attribute set. Derive it:
 Both estimators can be restricted to the 24 active rows measured in Phase 0
 (6,144 parameters rather than 12,800), holding the rest at the base voice. That
 does not change the plan above; it changes what it is fitted over. Phase 2b
-narrows it further, and favourably: the audible subspace is roughly the ~9
-dimensions the shipped presets span, and inside it embedding distance tracks
-style distance (Spearman 0.41, against 0.00 for random directions). Deriving
-axes there is much better conditioned than 6,144 free parameters suggests —
-and a direction found outside it may simply not be audible. Note also
+narrows it further, and favourably: inside the ~9 dimensions the shipped
+presets span, embedding distance tracks style distance (Spearman 0.41, against
+0.00 for random directions). Deriving axes there is much better conditioned
+than 6,144 free parameters suggests. A direction found outside that subspace is
+not inaudible — the 2026-09-09 correction below shows random directions are
+plainly audible — but what it moves is emphasis and level rather than identity
+or pitch register, so an axis meant to move identity should be sought inside
+the preset span and one meant to move prosody need not be. Note also
 that the probe found gender spread across roughly twenty rows rather than
 concentrated in one component, so the Eigenvoice single-component precedent
 should not be read as a prediction that a presentation axis will be similarly

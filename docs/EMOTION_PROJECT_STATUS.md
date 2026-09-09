@@ -215,20 +215,62 @@ this audio (100% 1-NN speaker ID, chance 10%), multi-utterance averaging worth
 0.011, and a 120-feature MFCC-moment baseline matching or beating ECAPA
 everywhere. All 24 active rows are negative under the family-disjoint split.
 
-The mechanism is the more useful half. The perturbation sweep found the audio
-never stops being voice-like — F0, voiced fraction, spectral flatness,
-modulation and WER flat across the whole ladder, and a controlled ray at a
-72-degree per-row rotation (twice the M1->F1 angle) still had WER 0.00. Matched
-per-row angle, preset-aligned directions are 3-5x more audible than random ones.
-**Style space is strongly anisotropic: the audible subspace is small and roughly
-aligned with the ~9 dimensions the shipped presets span, so the audio-to-style
-inverse is ill-posed in nearly every other direction.** That kills the probe
-shortcut and points Phase 2 at the direct encoder (2a), but it helps Phases 3
-and 4 — inside the preset-spanned subspace, embedding distance does track style
-distance (Spearman 0.41 against 0.00 for random directions). Scope: synthetic
-audio, engine-generated styles, three held-out identities, ECAPA only. **A WavLM
-probe is running in parallel and Phase 2b is not closed until it lands.** Full
-numbers are in [new-plan.md](../new-plan.md) under Phase 2.
+The mechanism is the more useful half, and **the mechanism first recorded was
+wrong.** The perturbation sweep found the audio never stops being voice-like —
+F0, voiced fraction, spectral flatness, modulation and WER flat across the whole
+ladder, and a controlled ray at a 72-degree per-row rotation (twice the M1->F1
+angle) still had WER 0.00 — and that was read as "most of style space is nearly
+inaudible, so the audio-to-style inverse is ill-posed in nearly every
+direction." **A listener heard the ray and contradicted it**: the clips clearly
+differ, increasingly with magnitude, and what changes is which words are
+emphasised (M1) and per-word loudness (F1). The flat metrics were all
+utterance-level aggregates, which collapse the time axis the effect lives on. A
+frame-level follow-up (`py/phase2b_prosody_*.py`, reports under the ignored
+`py/results/phase2b_prosody/`) confirms the listener: on M1 from eps 0.20 to
+3.20, utterance level goes +0.4 -> +4.9 dB and per-word energy spreads over 1.6
+-> 10.1 dB while median F0 moves 115 -> 119 Hz and WER stays 0.00; at eps 0.80 a
+random direction moves the log-mel spectrogram 8.4 dB rms against 16.6 dB for a
+full M1->F1 swap. The "3-5x more audible" figure was measured with delta-ECAPA,
+a speaker-verification embedding trained to be prosody-invariant; on
+prosody-sensitive measures the same comparison gives 1.1-3.2x.
+
+**Corrected: style space is anisotropic in what a direction changes, not in
+whether it changes anything.** At matched per-row angle a random direction moves
+median F0 by 40 cents where a preset-aligned one moves it 790, and delta-ECAPA
+3.5-6.5x less, but the log-mel spectrogram only ~1.7x less. So the null means
+**ECAPA cannot see most of what a style direction does**, not that most style
+directions do nothing — there is no information ceiling on an encoder; the
+information is in the audio, it was not in ECAPA. That still kills the probe
+shortcut and still points Phase 2 at the direct encoder (2a), but for a
+different reason: the *encoder input* was the wrong representation, so a
+prosody-bearing input (WavLM, or explicit prosodic features) is worth testing
+before concluding the inverse is ill-posed. The strong two-subspace reading —
+a clean "identity" subspace orthogonal to a "prosody" one — is **not**
+supported: the broadband-versus-spectral-shape split of the diff is essentially
+the same across direction families, and at matched total acoustic change
+the localisation advantage disappears. A graded version is: directions differ in
+what they move and in how much travel it costs, and random directions do reach
+F0 and timbre, just far along the ray. What survives untouched is that inside
+the preset-spanned subspace embedding distance tracks style distance (Spearman
+0.41 against 0.00 for random directions), which still helps Phases 3 and 4.
+Scope: synthetic audio, engine-generated styles, three held-out identities,
+ECAPA only; the ray is one seeded random direction per base, word boundaries
+came from faster-whisper tiny.en with a hand-stated repair, F0 above eps 1.60 is
+pyin-unreliable, and `style_dp` was pinned throughout. **A WavLM probe is
+running in parallel and Phase 2b is not closed until it lands.** Full numbers
+are in [new-plan.md](../new-plan.md) under Phase 2.
+
+**What this means for emotion.** `style_ttl` demonstrably has prosodic reach:
+random directions produce monotone, magnitude-scaled changes in utterance level
+and per-word emphasis while leaving intelligibility (WER 0.00) and pitch
+register intact, and the emphasis effect replicates on two further sentences
+(8.1 and 10.0 dB at eps 0.80). **Emphasis and loudness therefore look reachable
+as emotion axes** without touching the duration tensor. Two caveats go with
+that. First, a random direction produces *unstructured* emphasis jitter, not a
+coherent emotional contour — this shows the lever exists; an actual axis still
+has to be derived. Second, **`style_dp` was pinned throughout the entire
+analysis**, so speech rate and timing — a first-order emotion cue — lie outside
+everything measured here.
 
 Results live under the ignored `py/results/phase2b/` (343 MB) and are not
 present in a fresh clone. The environment now has `torch` 2.11.0+cpu,

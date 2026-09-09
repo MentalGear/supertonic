@@ -112,4 +112,8 @@ inline burns the context the main loop needs for judgment.
   seed the vocoder RNG, or the difference is mostly sampling noise. Without
   alignment (different durations or an unseeded render) a raw 2D diff is
   meaningless; align first or compare distributions instead.
+- **Level-match before listening across magnitudes.** Any A/B over a
+  perturbation ladder must be rms level-matched first: magnitude alone buys up
+  to +4.9 dB of plain loudness in `style_ttl`, and an unmatched comparison is
+  decided by which clip is louder rather than by the effect under test.
 - Active research direction: [new-plan.md](new-plan.md).
