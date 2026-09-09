@@ -86,7 +86,7 @@ exist locally.
 
 ## 5. Phase 2b — Speaker similarity
 
-- **Artifact:** not yet published
+- **Artifact:** https://claude.ai/code/artifact/1e0808cf-3de0-4968-8177-b48797202423
 - **Contains:** the calibrated ECAPA-cosine anchors (same-speaker
   different-seed, same-speaker different-sentence, different-speaker across
   45 preset pairs) against which WavLM-predicted, ECAPA-predicted, and
@@ -104,5 +104,22 @@ exist locally.
   inside the calibrated different-speaker range (0.225, spanning -0.012 to
   0.569), not the same-speaker one — this is evidence of a probe that beats
   a fixed-average baseline consistently (80/80 samples, and a same-gender
-  impostor on 95% of samples), not evidence of voice cloning. Awaiting the
-  listening verdict this bench asks for.
+  impostor on 95% of samples), not evidence of voice cloning.
+  By ear, on the three-sample set that preceded this one: the WavLM
+  reconstruction reads as mostly the true voice, and the fixed average never
+  does — the listener's report that prompted this whole measurement. So the
+  qualitative and calibrated readings agree on direction and disagree on
+  degree: a real, consistent partial recovery that does not reach identity.
+  The robustness check across best/typical/worst for all three identities was
+  then run and **it holds up**: the impression survives across the range. The
+  one outlier is F4's worst case, where the listener heard the WavLM
+  prediction as a blend of the true voice and the average one. That is what
+  ridge regression does — predictions shrink toward the training mean, most
+  strongly where the signal is weakest — so the weak end sounding like a
+  blend is the regulariser being audible, and is independent confirmation
+  that the probe degrades gracefully rather than erratically.
+  Scope worth restating here, because the word "true" invites the wrong
+  reading: every style in this bench is engine-generated. "True style" means
+  the tensor we constructed and rendered from, not a recorded human, and the
+  held-out identities are shipped presets withheld from probe training, not
+  held-out people.
