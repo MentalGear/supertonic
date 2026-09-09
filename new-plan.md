@@ -989,6 +989,64 @@ Still open:
 - **Three held-out identities** (M5, F4, F5), one language, synthetic audio
   throughout.
 
+### Phase 2a is now underway: ceiling audit, then a subspace-ladder corpus
+
+**First action, and it undercuts the closure above.** `py/phase2a_ceiling_audit.py`
+asks whether the within-family residual R^2 ≈ 0 that closed 2b was a fact
+about the audio or a fact about the estimator. Ridge regression's predictions
+are an affine combination of its n_train training targets, confined to a
+subspace of dimension at most n_train. The residual control fit n_train=240
+(numerical rank 239 after centering) against a target of 24 active rows x 256
+= 6,144 ambient dimensions (tangent space 6,120); a fresh random perturbation
+direction has expected squared projection onto a fixed 239-dim subspace of
+only 239/6144 = 3.9%, so the metric was capped near zero no matter what the
+audio contained. Scoring the oracle (test targets projected onto the training
+row space) with the same `phase2b_probe.evaluate()` that produced the null
+gives a ceiling of 0.0264 / 0.0258 / 0.0237 / 0.0197 / 0.0133 R^2 at eps
+0.05 / 0.10 / 0.20 / 0.40 / 0.80, against achieved values of -0.0136 to
+-0.0298 (best over ECAPA/WavLM x linear/kernel ridge) — every achieved value
+sits below its ceiling, as a valid bound requires. A second, probe-code-free
+check (per-base-preset mean removed, reachable-energy fraction) gives
+0.0385 / 0.0379 / 0.0384 at eps 0.05 / 0.20 / 0.80, flat against
+rank/6144 = 0.0379 — matching the analytic prediction to three decimals and
+confirming this is not an artifact of `phase2b_probe`'s code path.
+
+**The within-family residual null is downgraded from closed-negative to
+inconclusive: the design lacked the power to detect an effect of any size up
+to ~2.6% R^2.** The correct statement is not "audio does carry the
+perturbation" — it is "we do not know; the experiment could not have told us
+either way." This does not reopen the between-preset (base-voice) result,
+which the calibrated speaker-similarity bench (bench 5) verified
+independently of the ridge probe and which stands. One number correction for
+the record: an earlier pass reported the reachable fraction rising to 12.4%
+at eps 0.80, which read as a real recovery effect; with proper
+per-base-preset centering (rather than centering on the global train mean)
+it is flat at 3.8% across eps — the apparent rise reflected base-voice
+structure leaking through the global mean, not perturbation recovery.
+
+**The design consequence: the binding constraint was sample count relative
+to target dimensionality — not feature quality, and not utterances-per-style.**
+2b varied feature quality (ECAPA vs WavLM) and found WavLM's entire gain sat
+on the between-preset axis with none on the residual; a rank-capped metric
+could not have moved either way regardless of which embedding fed it. The
+plan as recorded above also named "many utterances per style, not a better
+single-utterance representation" as the lever, citing
+`phase2b_multi_utterance.py`'s K=4 embedding-averaging test (gain +0.011) as
+support. **That citation does not hold.** Averaging L2-normalized embeddings
+before the ridge fit denoises the *input*, but the fit's output still lies in
+the span of its n_train training targets — averaging inputs cannot raise
+that rank ceiling. The K=4 test could not have detected a rank-limited effect
+whether or not one exists, so a null result from it is not evidence against
+the many-utterances lever; it is one more measurement the same ceiling was
+capping.
+
+**New approach: a nested subspace ladder, sized so the estimator can express
+the target.** Instead of asking a rank-238 estimator to recover a
+rank-6,120 target, confine perturbations to a K-dimensional subspace of the
+tangent space at a fixed base preset — K=4 nested inside K=16 nested inside
+K=64 — and measure recovery as a function of K. That corpus is generating now
+via `py/phase2b_generate_subspace.py`.
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?

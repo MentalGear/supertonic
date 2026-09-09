@@ -199,8 +199,10 @@ without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
 voice pair, only the active/inactive split spans all ten presets. Full numbers
 are in [new-plan.md](../new-plan.md) under Phase 0.
 
-**Phase 2b has been run for both ECAPA and WavLM, came back negative, and is
-closed (2026-09-09).**
+**Phase 2b has been run for both ECAPA and WavLM (2026-09-09). The
+between-preset (base-voice) result stands; the within-family residual null —
+"audio does not carry the perturbation" — is downgraded to inconclusive, not
+closed negative. See the correction below the WavLM section.**
 Phase 2 as written was blocked here — its optimizer is external and there is no
 corpus or GPU on this machine — but the engine is its own paired-data generator,
 so synthesizing from known styles gives ground-truth `(audio, style)` pairs. The
@@ -393,6 +395,38 @@ averaged over several utterances of the same speaker should beat a
 single-utterance one — worth trying early in 2a. Full derivation in
 new-plan.md under Phase 2b.
 
+**Correction (`py/phase2a_ceiling_audit.py`, 2026-09-09): the within-family
+residual null was underpowered by construction, independent of the
+narrow-inverse account above.** Ridge regression's predictions are an affine
+combination of its training targets, confined to a subspace of dimension at
+most n_train. The residual control fit n_train=240 (numerical rank 239 after
+centering) against a target of 24 active rows x 256 = 6,144 ambient
+dimensions (tangent space 6,120); a fresh random direction has expected
+squared projection onto a fixed 239-dim subspace of only 239/6144 = 3.9%, so
+the metric was capped near zero regardless of what the audio contained.
+Scoring the oracle (test targets projected onto the training row space) with
+the same `phase2b_probe.evaluate()` that produced the null gives a ceiling of
+0.0264 / 0.0258 / 0.0237 / 0.0197 / 0.0133 R^2 at eps 0.05 / 0.10 / 0.20 /
+0.40 / 0.80, against achieved values of -0.0136 to -0.0298 (best over
+ECAPA/WavLM x linear/kernel ridge) — every achieved value sits below its
+ceiling, as a valid bound requires. A second, probe-code-free check
+(per-base-preset mean removed) gives a reachable-energy fraction of
+0.0385 / 0.0379 / 0.0384 at eps 0.05 / 0.20 / 0.80, flat against
+rank/6144 = 0.0379 — matching the analytic prediction to three decimals.
+**The within-family residual null is downgraded from closed-negative to
+inconclusive: the design lacked the power to detect an effect of any size up
+to ~2.6% R^2.** This is not "audio does carry the perturbation" — it is "we
+do not know; the experiment could not have told us either way." It does not
+touch the between-preset result, which the calibrated speaker-similarity
+bench (bench 5) verified independently of the ridge probe. One number
+correction for the record: an earlier pass reported the reachable fraction
+rising to 12.4% at eps 0.80, which read as a real effect; with proper
+per-base-preset centering (rather than the global train mean) it is flat at
+3.8% — the apparent rise reflected base-voice structure leaking through the
+global mean, not perturbation recovery. Full derivation, the design
+consequence for 2a, and the new subspace-ladder corpus are in
+[new-plan.md](../new-plan.md) under Phase 2.
+
 Caveats: one base, one sentence, so the dimensionality figures are
 per-(base, sentence); at eps 0.20 the emphasis profile sits near the
 vocoder-nuisance floor and is weakly identifiable, but the log-mel diff map is
@@ -455,8 +489,10 @@ np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 
 **Next action: Phase 2a — it is the only remaining route.** Phase 0 passed, its
 companion probe is done, Phase 1's composition work already landed with
-`with_deltas()` (1a is verified above), and Phase 2b is closed negative on both
-ECAPA and WavLM. What is left is 2a, the direct `audio -> style_ttl` encoder on
+`with_deltas()` (1a is verified above), and Phase 2b's between-preset result
+stands on both ECAPA and WavLM while its within-family residual null is
+inconclusive, not closed (see correction above). What is left is 2a, the
+direct `audio -> style_ttl` encoder on
 generated pairs. Two things bound it, and they pull in opposite directions.
 Nothing bounds it from the audio side: the perturbation is audible, and a
 prosody-bearing input does read more of it, so feed 2a WavLM-class features
