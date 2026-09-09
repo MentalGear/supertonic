@@ -7,9 +7,12 @@ This roadmap tracks the path from the current calibrated `angry` and
 [new-plan.md](../new-plan.md) supersedes this roadmap's sequencing, placing
 emotion as the first axis of a shared parametric system rather than a track
 run to completion on its own. Concretely: Phase 1's `gain` parameter is
-replaced by that plan's `with_deltas()` refactor, Phase 2's manual
-multi-speaker extraction should wait for its amortized encoder, and Phase
-3's evaluation should wait for the `intensity=0.0` normalization fix — see
+replaced by that plan's `with_deltas()` refactor (now shipped in both
+`py/helper.py` and `web/helper.js`), Phase 2's manual multi-speaker
+extraction should wait for its amortized encoder, and Phase 3's evaluation
+was blocked on the `intensity=0.0` normalization fix — that fix is verified
+(new-plan.md, Phase 1a, "Verified (2026-09-08)": M1 and F1 TTL rows measured
+unit-norm, so zero weight is an exact no-op), so that block is cleared. See
 that document for why each holds. Phase 6 is where the two documents
 converge.
 
@@ -98,15 +101,21 @@ peak of `1.0`, which indicates clipping risk.
   unit-row normalization.
 - Add progress callbacks or `tqdm` to the extraction optimizer.
 
-Target API:
+Target API (shipped as `with_deltas()`; the `gain` parameter below was
+discarded in favor of it — see the note at the top of this document):
 
 ```python
-style = base_style.with_emotion(
-    emotion_style,
-    intensity=0.75,
-    gain=1.0,
+style = base_style.with_deltas(
+    [(emotion_style, 0.75)],
+    include_duration=False,
 )
 ```
+
+`with_emotion(emotion_style, intensity=0.75)` survives as a
+backward-compatible single-delta wrapper over `with_deltas()`, with
+`intensity` still clamped to `[0, 1]`; `with_deltas()` itself takes any
+number of `(delta, weight)` pairs with unclamped, finite weights — any
+weight is a gain.
 
 ## Phase 2: Improve Calibration Data
 

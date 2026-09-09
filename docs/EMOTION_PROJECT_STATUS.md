@@ -470,10 +470,20 @@ this one; this roadmap's phase order is superseded.
 2. Generate audio directly with canonical names and update `manifest.json`
    automatically.
 3. Add clipping, RMS/loudness, duration, and finite-audio checks.
-4. Evaluate gain `1.0`, `2.0`, and `3.0`; choose safe defaults based on
-   listening and measurements.
-5. Extract matched recordings for at least five speakers, preferably 8-20.
-6. Compute speaker-normalized deltas and replace the one-speaker assets.
+4. Evaluate `with_deltas()` weights `1.0`, `2.0` and `3.0`; choose safe
+   defaults based on listening and measurements. (The idea stands; only the
+   vocabulary changed. There is no `gain` parameter any more — any finite
+   weight is a gain.)
+5. ~~Extract matched recordings for at least five speakers, preferably
+   8-20~~ — superseded by new-plan.md's sequencing: this is Roadmap Phase 2,
+   and manual multi-speaker extraction is exactly the GPU bottleneck the
+   amortized encoder (new-plan.md Phase 2a) removes. Doing it by hand first
+   "spends days to avoid building the thing that makes it minutes." The next
+   action is the direct `audio -> style_ttl` encoder — see "Next action:
+   Phase 2a" above — not manual extraction.
+6. ~~Compute speaker-normalized deltas and replace the one-speaker
+   assets~~ — same supersession. This becomes 2a's training target once the
+   encoder exists, not a manual step to do first.
 7. Add extraction-step progress callbacks or `tqdm` to the optimizer.
 8. Implement non-nested inline tags through segment synthesis and 10-30 ms
    crossfades.

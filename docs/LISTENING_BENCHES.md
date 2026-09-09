@@ -65,11 +65,15 @@ exist locally.
 ## 4. Phase 2b — Direction collapse / WavLM
 
 - **Artifact:** https://claude.ai/code/artifact/b9d634e6-78cd-4190-940f-830adb910346
-- **Contains:** eight near-orthogonal `style_ttl` directions from one base
-  voice at matched step size (job 1), and true / ECAPA-predicted /
-  WavLM-predicted / fixed-average-voice recovery quadruples for three
-  held-out-voice utterances (job 2), plus the pairwise emphasis-correlation
-  figures behind both.
+- **Contains:** 8 of the 24 mutually near-orthogonal `style_ttl` directions
+  the measurement used, rendered from one base voice at matched step size —
+  the subset that stays A/B-able for a listener (job 1) — and true /
+  ECAPA-predicted / WavLM-predicted / fixed-average-voice recovery
+  quadruples for three held-out-voice utterances (job 2), plus the pairwise
+  emphasis-correlation figures behind both. The direction-identifiability
+  measurement itself ran on all 24 (chance rate 1/24 = 4.2%; cross-latent
+  1-NN on the log-mel diff got it right 70.8% of the time at eps 0.20 and
+  66.7% at eps 0.80).
 - **Generator:** `py/benches/phase2b_direction_collapse_bench.py`
 - **Inputs:** `py/results/listening_sets/phase2b_direction_collapse/`,
   `py/results/listening_sets/phase2b_probe_recovery_wavlm/` (WAVs),
