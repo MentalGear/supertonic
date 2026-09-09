@@ -74,6 +74,11 @@ strength sweeps, the Phase 0 interpolation gate, and every later axis sweep are
 judged by ear first. Send the clips with their manifest details attached; for a
 large matrix send the endpoints and midpoint and say what was left out.
 
+Sets that need a verdict by ear also get published as an Artifact listening
+bench, with the generator kept in `py/benches/` — see
+[docs/LISTENING_BENCHES.md](LISTENING_BENCHES.md) for the full index,
+including which benches changed a recorded conclusion.
+
 The canonical M1 set has a `manifest.json` beside the WAV files. It includes
 the gain `2.0` and `3.0` experiments, marked as experimental. Older one-off
 outputs are retained under `py/results/legacy/`.

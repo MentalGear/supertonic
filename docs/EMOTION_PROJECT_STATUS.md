@@ -51,6 +51,8 @@ Documentation/notebooks:
 - `docs/EMOTION_CALIBRATION.md`: full extraction/calibration guide.
 - `docs/EMOTION_ROADMAP.md`: phased roadmap and naming conventions.
 - `docs/emotion_calibration_colab.ipynb`: resumable Colab workflow.
+- `docs/LISTENING_BENCHES.md`: index of published Artifact listening benches,
+  their generators, and the verdicts they produced.
 
 ## Runtime Contract
 

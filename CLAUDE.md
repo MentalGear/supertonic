@@ -51,6 +51,19 @@ inline burns the context the main loop needs for judgment.
   per-position reach, which is why perturbing it can change which words are
   emphasized while durations stay pinned. Treat "style_ttl is timbre" as a
   label that under-describes what it controls.
+  `style_dp` is the opposite case — a label that over-describes one. Its graph
+  emits a **single per-utterance scalar in seconds**, not a per-token array,
+  despite the `Squeezeduration_dim_0` output name suggesting otherwise;
+  confirmed by direct inference (`shape (1,)`), and by the `# dur_onnx: [bsz]`
+  comment at `py/helper.py:330`. So for a fixed utterance the whole of
+  `style_dp`'s 128 numbers is observable only through that one value — which
+  `speed` already sets directly, at `py/helper.py:326`
+  (`dur_onnx = dur_onnx / speed`). Treat timing as an effective scalar, not a
+  second control surface. There is no per-token duration anywhere in the
+  Python pipeline to intercept: text and latent are aligned inside the frozen
+  `vector_estimator`, and only `text_mask`/`latent_mask` cross the boundary.
+  Rate and rhythm control, if it is reachable at all, has to come through
+  `style_ttl`.
 - **Style blending lives in `py/helper.py` (`Style`) and `web/helper.js`.**
   Changes to blending semantics must land in both — the browser path is not
   generated from the Python one, and the two silently diverged once already
@@ -97,7 +110,25 @@ inline burns the context the main loop needs for judgment.
   others so comparison is A/B rather than overlapping. Attach the raw WAVs too —
   the page is for judging, the files are for keeping. Reuse the established
   visual system across benches (IBM Plex Sans/Mono with Newsreader, teal accent
-  on cool neutrals) so successive sets read as one series.
+  on cool neutrals) so successive sets read as one series. See
+  [docs/LISTENING_BENCHES.md](docs/LISTENING_BENCHES.md) for every bench built
+  so far, its generator, and the verdict it produced.
+- **Keep the bench generator in the repo, per phase.** A published Artifact URL
+  is not a durable record on its own; the generator, its inputs, and the
+  verdict obtained belong in the repo, indexed in
+  [docs/LISTENING_BENCHES.md](docs/LISTENING_BENCHES.md). Generated bench HTML
+  stays out of git — the files run 1.8–8.3 MB because audio is base64-embedded,
+  and the WAVs are gitignored anyway.
+- **Make the listening task explicit in the bench UI.** A bench exists to
+  obtain a human verdict, so the page must state plainly what is being asked,
+  in a visually distinct callout near the top, with a one-line restatement
+  above each clip group, and say what the answer decides. Distinguish "which
+  sounds better" from the question actually being asked, which is usually
+  narrower — a listener answering the wrong question gives a confident,
+  useless verdict. Labels must describe what the listener is hearing, not the
+  mechanism that produced it: a clip labelled "reads no audio at all"
+  (describing the predictor) was reasonably misread as describing the clip,
+  which is obviously synthesized speech.
 - **Compare spectrograms before you compare aggregates.** A scalar summary —
   median F0, mean spectral flatness, voiced fraction, WER — collapses both time
   and frequency, so a change that is localized in time (per-word emphasis) or
