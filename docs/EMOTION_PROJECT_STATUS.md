@@ -125,6 +125,10 @@ No generated audio was deleted during cleanup.
 - Phase 0's companion row-structure probe run the same day via
   `py/phase0_row_locality.py`. `style_ttl` is localized at the row-group level,
   confirmed by ear. Details in the handoff section below.
+- Phase 2b of [new-plan.md](../new-plan.md), the speaker-embedding probe, run on
+  2026-09-09 with the `py/phase2b_*.py` scripts. ECAPA does not predict
+  `style_ttl` for unseen voices; the WavLM half is still running. Details in the
+  handoff section below.
 
 ## Colab Recovery
 
@@ -192,8 +196,48 @@ without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
 voice pair, only the active/inactive split spans all ten presets. Full numbers
 are in [new-plan.md](../new-plan.md) under Phase 0.
 
-Those two runs are the first things to touch the real ONNX graph since the
-`with_deltas()` refactor. The rest of that session's work was static analysis,
+**Phase 2b has been run for ECAPA and it came back negative (2026-09-09).**
+Phase 2 as written was blocked here — its optimizer is external and there is no
+corpus or GPU on this machine — but the engine is its own paired-data generator,
+so synthesizing from known styles gives ground-truth `(audio, style)` pairs. The
+`py/phase2b_*.py` scripts built 1,920 such pairs: six conditions of 320 (preset
+blends, then random per-row perturbations at eps 0.05 through 0.80) over 8 texts
+and 7 training presets, with M5, F4 and F5 held out, seeded per sample, with
+`style_dp` fixed at M1's. **A linear probe from ECAPA embeddings to `style_ttl`
+reaches family-disjoint R^2 of only 0.192 on preset blends and 0.007 at the
+widest perturbation**, against a linear ceiling of 1.000 and 0.746; against the
+held-out set's own mean every one of those figures is negative. Random-split
+R^2 was 0.925-0.962 and tracks "which base preset was this" almost exactly, so
+the naive experiment would have reported ~0.93 and meant nothing. Every control
+agrees: shuffled-target R^2 -0.000 to -0.020 (nothing to fit), an RBF kernel
+probe worse than linear with real control-task leakage, ECAPA itself fine on
+this audio (100% 1-NN speaker ID, chance 10%), multi-utterance averaging worth
+0.011, and a 120-feature MFCC-moment baseline matching or beating ECAPA
+everywhere. All 24 active rows are negative under the family-disjoint split.
+
+The mechanism is the more useful half. The perturbation sweep found the audio
+never stops being voice-like — F0, voiced fraction, spectral flatness,
+modulation and WER flat across the whole ladder, and a controlled ray at a
+72-degree per-row rotation (twice the M1->F1 angle) still had WER 0.00. Matched
+per-row angle, preset-aligned directions are 3-5x more audible than random ones.
+**Style space is strongly anisotropic: the audible subspace is small and roughly
+aligned with the ~9 dimensions the shipped presets span, so the audio-to-style
+inverse is ill-posed in nearly every other direction.** That kills the probe
+shortcut and points Phase 2 at the direct encoder (2a), but it helps Phases 3
+and 4 — inside the preset-spanned subspace, embedding distance does track style
+distance (Spearman 0.41 against 0.00 for random directions). Scope: synthetic
+audio, engine-generated styles, three held-out identities, ECAPA only. **A WavLM
+probe is running in parallel and Phase 2b is not closed until it lands.** Full
+numbers are in [new-plan.md](../new-plan.md) under Phase 2.
+
+Results live under the ignored `py/results/phase2b/` (343 MB) and are not
+present in a fresh clone. The environment now has `torch` 2.11.0+cpu,
+`torchaudio` 2.11.0, `speechbrain` 1.1.1 (for ECAPA) and `faster-whisper` 1.2.1
+(for WER) installed; the probe scripts need them.
+
+The two Phase 0 runs were the first things to touch the real ONNX graph since
+the `with_deltas()` refactor, and Phase 2b's 1,920 renders are the largest use
+of it so far. The rest of the 2026-09-08 session's work was static analysis,
 documentation, and numeric tests against synthetic tensors.
 
 The model assets it needed were fetched with
@@ -221,15 +265,17 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
-**Next action is Phase 2 of [new-plan.md](../new-plan.md): amortized style
-inversion.** Phase 0 has passed, its companion probe is done, and Phase 1's
-composition work already landed with `with_deltas()` (1a is verified above), so
-nothing remains at the front of that plan and its sequencing puts Phase 2 next —
-train `audio -> style_ttl` on optimizer-generated pairs (2a) and run the
-ECAPA/WavLM linear probe with its control task and speaker-disjoint splits (2b).
-Report the probe's per-row R^2 over the 24 active rows separately from the
-aggregate; the near-constant rows would flatter a whole-tensor number. The
-ordering is in that document, not in this one; this roadmap's phase order is
+**Next action: land the WavLM half of Phase 2b, then Phase 2a.** Phase 0 passed,
+its companion probe is done, Phase 1's composition work already landed with
+`with_deltas()` (1a is verified above), and 2b's ECAPA probe is in and negative.
+What remains in 2b is the WavLM probe now running; the same scripts and splits
+apply, so slot its number in beside ECAPA's rather than re-running the design.
+After that the plan's remaining route is 2a, the direct `audio -> style_ttl`
+encoder on generated pairs — evaluated against a converged style rather than
+against downstream audio, since 2b showed audio metrics cannot see most of the
+target. Axis work in Phases 3-4 should be fitted inside the preset-spanned
+subspace where 2b found the conditioning is good. The ordering is in
+[new-plan.md](../new-plan.md), not in this one; this roadmap's phase order is
 superseded.
 
 ## Next Best Steps

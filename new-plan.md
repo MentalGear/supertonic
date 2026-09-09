@@ -1,7 +1,9 @@
 # Parametric Voice Space — Research Plan
 
 Status: proposal. Supersedes the `new-plan` sketch. Phase 0 was run on
-2026-09-08 and passed; see the result recorded under that phase.
+2026-09-08 and passed; Phase 2b's ECAPA probe was run on 2026-09-09 and came
+back negative, with WavLM still pending. See the results recorded under those
+phases.
 
 ## Goal
 
@@ -347,7 +349,10 @@ of one fixed operating point.
 
 Evaluate the encoder against **the optimizer's own converged style**, not only
 against downstream audio quality. Audio metrics masked systematic encoder bias
-in the early image-inversion work, and the same failure is available here.
+in the early image-inversion work, and the same failure is available here. The
+2b result below sharpens this: most directions in style space are close to
+inaudible, so no encoder — this one included — can recover more than the audible
+quotient, and audio metrics would report that as success.
 
 **2b. Probe from an off-the-shelf speaker encoder.** Fit a map
 `ECAPA/WavLM embedding -> style_ttl`. Run this explicitly as a **linear probe
@@ -396,6 +401,134 @@ so this is a genuinely open measurement with no baseline to check against.
 
 Report the probe result before building on either branch. It changes how much
 of phase 3 is needed.
+
+### Result: negative for ECAPA (2026-09-09); WavLM pending
+
+Phase 2 as written is blocked on this machine — the optimizer is external, and
+there is no corpus and no GPU — but 2b's question needed none of that. The
+engine is its own paired-data generator: synthesizing from a known style yields
+ground-truth `(audio, style)` pairs, which is the same argument this phase opens
+with, run in the other direction.
+
+Run with `py/phase2b_generate.py`, `phase2b_embed.py` and `phase2b_probe.py`,
+with `phase2b_audio_sanity.py`, `phase2b_embedding_controls.py`,
+`phase2b_direction_audibility.py`, `phase2b_perturbation_sweep.py`,
+`phase2b_multi_utterance.py`, `phase2b_render_predictions.py` and
+`phase2b_summarize.py` as controls and follow-ups. 1,920 pairs: six conditions
+of 320 — preset blends, then perturbations at eps 0.05 / 0.10 / 0.20 / 0.40 /
+0.80 — over 8 texts, 7 training presets with M5, F4 and F5 held out, per-sample
+seeded rendering, `style_dp` fixed at M1's. The perturbation model is, per
+active row, `normalize(P_r + eps*u_r)` with `u_r` uniform on the unit sphere in
+R^256; the 26 inactive rows stay at the base preset. Row norms held throughout
+(worst deviation 2.4e-07) and one clip of the 1,920 clipped. Outputs are under
+the ignored `py/results/phase2b/`.
+
+Family-disjoint R^2 (the three unseen voices), against the linear ceiling on the
+same data, with the effective rank of the sampled style set:
+
+| Condition | Family-disjoint R^2 | Linear ceiling | Effective rank |
+|---|---|---|---|
+| preset blends | 0.192 | 1.000 | 9.0 |
+| eps 0.05 | 0.089 | 0.995 | 5.1 |
+| eps 0.10 | 0.086 | 0.979 | 5.7 |
+| eps 0.20 | 0.067 | 0.933 | 7.8 |
+| eps 0.40 | 0.057 | 0.834 | 22.2 |
+| eps 0.80 | 0.007 | 0.746 | 104.7 |
+
+The ranks are censored by n=320 and so are lower bounds; the designed
+dimensionality is 24 rows x 255 tangent dimensions = 6,120 continuous, plus the
+discrete choice of base preset.
+
+**The methodological trap was sprung deliberately.** Random-split R^2 runs 0.925
+(preset blends) to 0.962 (eps 0.05), decaying to 0.109 at eps 0.80, and a
+variance decomposition shows it tracking "which base preset was this" almost
+exactly — that factor's share of target variance is 0.983 / 0.936 / 0.788 /
+0.478 / 0.202 down the eps ladder. Sampling only preset blends and splitting
+randomly would have reported R^2 ~0.93 and meant nothing. Measured instead
+against the held-out set's own mean, every family-disjoint R^2 above is negative
+(-0.18 to -5.4); the positive figures are variance explained relative to
+predicting one fixed style, which is the fairer framing of the same result.
+
+Controls:
+
+- **Control task** (Hewitt & Liang): shuffled-target R^2 is -0.000 to -0.020, so
+  selectivity equals the full number. The probe is not fitting noise — there is
+  nothing there to fit.
+- **Nonlinearity.** An RBF kernel probe was *worse* on unseen voices and showed
+  real control-task leakage (-0.05 to -4.7).
+- **Not domain mismatch.** ECAPA works fine on this audio: 100% 1-NN speaker ID
+  across the ten presets against 10% chance, same-preset cosine 0.734 vs
+  different-preset 0.186.
+- **Not text nuisance.** Averaging ECAPA over 4 utterances moved family-disjoint
+  R^2 only 0.067 to 0.078.
+- **Not speaker-verification structure either.** A 120-feature MFCC-moment
+  baseline matches ECAPA everywhere and beats it on preset blends (0.286 vs
+  0.192). What little signal exists is coarse spectral statistics.
+- **Trivial baselines** at eps 0.20: probe cosine 0.896, constant train mean
+  0.887, 1-NN 0.847.
+- **Within-family residual** (base preset removed — can it recover the
+  perturbation direction alone): R^2 -0.013 to -0.031, and exactly +0.0000
+  against the constant predictor, LOO-CV having selected the maximum ridge
+  penalty and collapsed the probe to a constant. Honest caveat: that residual is
+  isotropic in 6,120 dimensions, so any linear map from 192 inputs has a
+  structural ceiling of 192/6120 = 3.1%. It is a weak test by construction; the
+  full-target numbers are the load-bearing evidence.
+- **Per row**, as this phase asks: all 24 active rows are negative under the
+  family-disjoint split at every condition. Least bad at eps 0.20 are rows 6 and
+  45 (-0.40), 23 (-0.48) and 22 (-0.54); worst is row 8 (-2.79). The
+  whole-tensor number is uniformly *worse* than the active-row number rather
+  than flattered by it — a held-out preset's 26 near-constant rows are unseen
+  constants, not free wins.
+
+**The mechanism matters more than the null.** The perturbation sweep found the
+audio never stops being voice-like: voiced fraction, median F0, spectral
+flatness, 2-8 Hz modulation and WER are flat across the whole eps ladder (WER
+0.054-0.083 against 0.066 for the unperturbed presets), and a controlled ray
+reached eps 3.20 — a 72-degree per-row rotation, twice the largest per-row angle
+between M1 and F1 — with WER still 0.00 and F0 moved 5 Hz. Direction audibility
+at matched per-row angle from M1, measured as delta-ECAPA: a random direction
+gives 0.028 / 0.059 / 0.354 at eps 0.1 / 0.2 / 0.8, a direction inside the
+preset-PCA subspace gives 0.113 / 0.207 / 0.685, and a direction toward another
+preset gives 0.128 / 0.301 / 0.953 (a full M1->F1 swap is 0.814). Preset-aligned
+directions are 3-5x more audible per unit of travel through style space than
+random ones, and at eps 0.2 the style signal (0.059) is 4.5x *smaller* than the
+text nuisance between two renders of the same style (0.266).
+
+So style space is strongly anisotropic. The audible subspace is small and
+roughly aligned with the ~9 dimensions the shipped presets span, and the
+audio-to-style inverse is ill-posed in nearly every other direction. The plan
+did not anticipate this, and it is the reason the probe fails rather than a
+separate finding: most of the target is not recoverable from audio by anything,
+because most of the target is not in the audio.
+
+**Verdict: the optimistic branch is dead and the middle branch with it — the
+kernel probe was worse on unseen voices, with real control-task leakage. This
+lands on the third branch: style space encodes something meaningfully different
+from speaker-verification space, and the direct encoder (2a) is the viable
+route. ECAPA only; the WavLM half of this probe is still running, so Phase 2b
+is not closed.**
+
+Two consequences worth carrying forward, one each way. It bounds 2a: a direct
+encoder can only recover the audible quotient of the style, which is why this
+phase's instruction to evaluate it against the optimizer's converged style
+rather than against downstream audio matters more than it looked. And it helps
+Phases 3 and 4: *within* the preset-spanned subspace, embedding distance does
+track style distance (Spearman 0.41, against 0.00 for random directions at every
+magnitude), so deriving axes there is far better conditioned than the
+6,144-parameter framing suggests.
+
+Still open:
+
+- **WavLM.** Named alongside ECAPA above and not yet tested; a WavLM probe is
+  running. The ECAPA result stands on its own, but "speaker embeddings do not
+  predict `style_ttl`" is not established until that lands.
+- **Where the sampled styles live.** Every style here was engine-generated from
+  a base preset, so the sampled set may not reach where real speakers do. That
+  bounds the answer rather than closing it — and closing it needs
+  optimizer-extracted real-speaker styles, which is the dependency Phase 2
+  exists to remove.
+- **Three held-out identities** (M5, F4, F5), one language, synthetic audio
+  throughout.
 
 ## Phase 3: Deriving the Axes
 
@@ -470,7 +603,12 @@ So do not assume a root-attribute set. Derive it:
 
 Both estimators can be restricted to the 24 active rows measured in Phase 0
 (6,144 parameters rather than 12,800), holding the rest at the base voice. That
-does not change the plan above; it changes what it is fitted over. Note also
+does not change the plan above; it changes what it is fitted over. Phase 2b
+narrows it further, and favourably: the audible subspace is roughly the ~9
+dimensions the shipped presets span, and inside it embedding distance tracks
+style distance (Spearman 0.41, against 0.00 for random directions). Deriving
+axes there is much better conditioned than 6,144 free parameters suggests —
+and a direction found outside it may simply not be audible. Note also
 that the probe found gender spread across roughly twenty rows rather than
 concentrated in one component, so the Eigenvoice single-component precedent
 should not be read as a prediction that a presentation axis will be similarly
@@ -618,6 +756,11 @@ For each axis:
   both independently and never use WER as a proxy. Second, treat
   non-monotonicity as an **expected** outcome to measure for, not a tail risk.
 
+  Phase 2b adds a third: WER is not merely a poor proxy, it is close to
+  insensitive. Random style perturbations out to a 72-degree per-row rotation —
+  twice the M1->F1 angle — left WER at 0.00 and F0 within 5 Hz. Expect the
+  limit on a range to be audibility or monotonicity, not intelligibility.
+
   One reason for cautious optimism: the paper's baseline edits a single
   speaker vector, whereas `style_ttl` is a 50 x 256 set reused as attention
   keys throughout the vector-field estimator (confirmed at
@@ -694,7 +837,11 @@ README already sells emotion as this fork's differentiator.
    well-posed axis before either demographic axis touches it.
 4. **Presentation axis** — the first between-speaker axis, but the easiest
    one: gender is ~99-100% linearly decodable from ECAPA, so the Phase 2b
-   probe shortcut actually applies here. Phase 0's probe adds that in style
+   probe shortcut actually applies here. With the caveat that the probe itself
+   came back negative for ECAPA, so presentation must be derived in style
+   space rather than read across from an ECAPA direction; what survives is
+   that presentation lies inside the preset-spanned subspace, where 2b found
+   the conditioning is good. Phase 0's probe adds that in style
    space the M1->F1 difference is spread over roughly twenty rows, not one
    component — decodable, but not a single knob to find.
 5. **Age axis** — last, deliberately. No prior art, no within-speaker
