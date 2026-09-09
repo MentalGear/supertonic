@@ -110,9 +110,16 @@ exist locally.
   does — the listener's report that prompted this whole measurement. So the
   qualitative and calibrated readings agree on direction and disagree on
   degree: a real, consistent partial recovery that does not reach identity.
-  This bench spans best/typical/worst across all three identities rather than
-  the three samples originally heard, so it remains open as a robustness
-  check — does the impression survive at the weak end (M5 worst, cosine
-  0.288) as well as the strong one (F4 best, 0.656)? Nothing downstream waits
-  on the answer; Phase 2b closed on the within-family residual, which this
-  does not test.
+  The robustness check across best/typical/worst for all three identities was
+  then run and **it holds up**: the impression survives across the range. The
+  one outlier is F4's worst case, where the listener heard the WavLM
+  prediction as a blend of the true voice and the average one. That is what
+  ridge regression does — predictions shrink toward the training mean, most
+  strongly where the signal is weakest — so the weak end sounding like a
+  blend is the regulariser being audible, and is independent confirmation
+  that the probe degrades gracefully rather than erratically.
+  Scope worth restating here, because the word "true" invites the wrong
+  reading: every style in this bench is engine-generated. "True style" means
+  the tensor we constructed and rendered from, not a recorded human, and the
+  held-out identities are shipped presets withheld from probe training, not
+  held-out people.
