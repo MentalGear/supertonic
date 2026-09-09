@@ -86,7 +86,7 @@ exist locally.
 
 ## 5. Phase 2b — Speaker similarity
 
-- **Artifact:** not yet published
+- **Artifact:** https://claude.ai/code/artifact/1e0808cf-3de0-4968-8177-b48797202423
 - **Contains:** the calibrated ECAPA-cosine anchors (same-speaker
   different-seed, same-speaker different-sentence, different-speaker across
   45 preset pairs) against which WavLM-predicted, ECAPA-predicted, and
@@ -104,5 +104,15 @@ exist locally.
   inside the calibrated different-speaker range (0.225, spanning -0.012 to
   0.569), not the same-speaker one — this is evidence of a probe that beats
   a fixed-average baseline consistently (80/80 samples, and a same-gender
-  impostor on 95% of samples), not evidence of voice cloning. Awaiting the
-  listening verdict this bench asks for.
+  impostor on 95% of samples), not evidence of voice cloning.
+  By ear, on the three-sample set that preceded this one: the WavLM
+  reconstruction reads as mostly the true voice, and the fixed average never
+  does — the listener's report that prompted this whole measurement. So the
+  qualitative and calibrated readings agree on direction and disagree on
+  degree: a real, consistent partial recovery that does not reach identity.
+  This bench spans best/typical/worst across all three identities rather than
+  the three samples originally heard, so it remains open as a robustness
+  check — does the impression survive at the weak end (M5 worst, cosine
+  0.288) as well as the strong one (F4 best, 0.656)? Nothing downstream waits
+  on the answer; Phase 2b closed on the within-family residual, which this
+  does not test.
