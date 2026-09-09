@@ -80,8 +80,17 @@ def mean_cosine(Yte, Ypred):
     return float(np.nanmean(cos))
 
 
-def run_one_k(K, recs_k, feats, subspace, layers):
-    """recs_k: manifest records with this K, in manifest order."""
+def build_xy(K, recs_k, feats, subspace, layers):
+    """recs_k: manifest records with this K, in manifest order.
+
+    Returns (X, Y, rms_pre, itr, ite, n_matched, n_missing_from_feats) -- the
+    exact WavLM-representation / c_realized id-matching and train/test split
+    shared by every probe script that reads phase2b_subspace's outputs.
+    X, Y, rms_pre are aligned and in `kept`-order; itr/ite are row indices
+    into them for the manifest's train/test split. Reuse this rather than
+    reimplementing the id-matching, since a silent mismatch here would
+    silently misalign features and targets.
+    """
     key_to_row = {(int(k), int(i)): n for n, (k, i) in enumerate(zip(feats["K"], feats["idx"]))}
 
     kept = [r for r in recs_k if (K, int(r["idx"])) in key_to_row]
@@ -102,6 +111,11 @@ def run_one_k(K, recs_k, feats, subspace, layers):
     ite = np.where(split == "test")[0]
     assert len(itr) > 0 and len(ite) > 0, f"K={K}: empty split (train={len(itr)}, test={len(ite)})"
 
+    return X, Y, rms_pre, itr, ite, len(kept), missing
+
+
+def run_one_k(K, recs_k, feats, subspace, layers):
+    X, Y, rms_pre, itr, ite, n_matched, missing = build_xy(K, recs_k, feats, subspace, layers)
     Xtr, Xte = X[itr], X[ite]
     Ytr, Yte = Y[itr], Y[ite]
 
@@ -129,7 +143,7 @@ def run_one_k(K, recs_k, feats, subspace, layers):
 
     return {
         "K": K,
-        "n_matched": len(kept),
+        "n_matched": n_matched,
         "n_missing_from_feats": missing,
         "n_train": int(len(itr)),
         "n_test": int(len(ite)),
