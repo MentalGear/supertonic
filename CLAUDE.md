@@ -116,4 +116,16 @@ inline burns the context the main loop needs for judgment.
   perturbation ladder must be rms level-matched first: magnitude alone buys up
   to +4.9 dB of plain loudness in `style_ttl`, and an unmatched comparison is
   decided by which clip is louder rather than by the effect under test.
+- **Calibrate a distance before citing it as evidence.** This project has now
+  been misled by an uncalibrated metric three times, each caught by a
+  listener or a calibrated measurement rather than by the metric itself:
+  utterance-level aggregates called a moving perturbation ladder acoustically
+  flat; delta-ECAPA was used as an audibility meter although it is trained to
+  be prosody-invariant; and Phase 2b used log-mel distance and active-row
+  style cosine as identity measures, when calibrated across 80 held-out
+  samples the same-speaker and different-speaker distributions overlap
+  completely. **Before using a distance as evidence, calibrate it against
+  known-same and known-different pairs; if those two distributions overlap,
+  the distance cannot support the claim.** A threshold derived from a single
+  pair is not a calibration.
 - Active research direction: [new-plan.md](new-plan.md).

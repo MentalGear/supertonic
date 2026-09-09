@@ -821,14 +821,70 @@ idx1200 (F5) ECAPA 0.8747 / 15.88 dB, WavLM 0.9000 / 15.68, train-mean
 train-mean 0.8730 / 19.71; idx1202 (M5) ECAPA 0.9021 / 21.47, WavLM
 0.9012 / 19.01, train-mean 0.8871 / 22.32.
 
-For scale, a full M1->F1 identity swap is 16.6 dB rms log-mel. **Both probes'
-predictions sit 14-21 dB from the true style — as far as, or further than, a
-different speaker.** WavLM's mean gain over ECAPA is +0.017 cosine, and the
-train-mean baseline — zero audio read — trails WavLM by only 0.017-0.028
-cosine. The probe's R^2 is real and not noise (the control task already
-established that), but what it buys over reading no audio at all is small
-next to the gap that remains — consistent with, not in tension with, the
-narrow-inverse reading above.
+For scale, a full M1->F1 identity swap was quoted above as 16.6 dB rms
+log-mel, from which the record concluded **both probes' predictions sit
+14-21 dB from the true style — as far as, or further than, a different
+speaker.**
+
+**Correction (`py/phase2b_speaker_similarity.py`, `py/phase2b_gender_confound.py`,
+2026-09-09): that claim is false and is withdrawn — the 16.6 dB figure was
+never a valid identity threshold.** It was calibrated from a single pair.
+Re-derived from many pairs — all 80 held-out test samples, condition
+eps0.20, same ridge probes and protocol, reproducing ECAPA R^2 +0.067 and
+WavLM R^2 +0.142 exactly — frame-aligned log-mel rms distance for
+same-speaker pairs at a different vocoder seed averages **17.42 dB** (10
+pairs, range 10.5-24.6), and for different-speaker pairs across all 45
+preset combinations averages **17.82 dB** (range 11.2-23.9). The two
+distributions are statistically indistinguishable (0.4 dB apart against a
+same-speaker sd of 3.9, full range overlap), and M1-F1 itself reproduces at
+17.49 dB, consistent with the 16.6 dB quoted above. **Same-speaker pairs
+routinely exceed 16.6 dB from vocoder-seed noise alone, so log-mel distance
+at this scale cannot separate same-speaker from different-speaker pairs and
+never supported an identity claim.** Active-row style cosine fares no
+better: within a single predictor type — the fair test, correlating with
+true ECAPA speaker similarity sample-by-sample rather than pooling across
+predictor types — it correlates -0.02 (ECAPA probe) / +0.40 (WavLM) / +0.55
+(train-mean) with identity, and log-mel distance -0.33 / -0.13 / -0.15.
+Pooling all three predictors together inflates this to r ~+0.67 / -0.29, but
+that is between-group separation (which predictor produced this sample) —
+the same random-split trap this record warns about elsewhere — not a
+within-condition correlation, and not evidence either metric tracks
+identity.
+
+Calibrated instead on ECAPA cosine between rendered clips — the metric ECAPA
+is actually built to measure — same-speaker/different-seed pairs anchor at
+0.879 (0.784-0.927), same-speaker/different-sentence at 0.759
+(0.669-0.826), different-speaker across the same 45 preset pairs at 0.225
+(-0.012-0.569). WavLM's predictions average **0.432** (0.288-0.656) against
+the true style — inside the different-speaker range, with only its single
+best sample (F4, 0.656) approaching the same-speaker floor of 0.669 — and
+never reach same-speaker territory; ECAPA-pred averages 0.383, train-mean
+0.240. So on this calibration the reconstructions still fall short of true
+identity, as the withdrawn framing claimed by a different, invalid route.
+But **the recovered signal is real and consistent, not the near-zero margin
+the withdrawn active-row-cosine comparison (WavLM trailed train-mean by only
+0.017-0.028) implied**: WavLM beats the train-mean baseline on **80/80
+samples** (mean margin +0.19 ECAPA cosine) and beats a same-gender
+wrong-speaker impostor on **95%** of samples (100% on M5), margin +0.22. A
+gender confound explains part but not all of this: train-mean is decisively
+male-leaning (median F0 920-980 cents against a male-preset mean of 998 and
+female mean of 1934; its four nearest presets by ECAPA cosine are M4, M3,
+M1, M2), so beating it on female-true samples could be gender alone — but on
+**M5**, where baseline and impostor are both male and gender explains
+nothing, WavLM still beats the same-gender impostor on 29/29 samples with
+margin +0.220, *larger* than its +0.145 margin over train-mean there. Per
+identity: WavLM 0.483 (F4) / 0.449 (F5) / 0.374 (M5), matching an
+independent listener's ranking of the same three reconstructions (F5 clearly
+right, M5 only close).
+
+**This does not reopen the closure below — it corrects how far the
+reconstructions sit from the true style, not what they recover it from.**
+WavLM's gain is on base-voice identity, exactly what the record already
+predicts probes would recover: 78.8% of eps 0.20's target variance is
+between-base-preset (the within-family residual control below), and this
+measurement is squarely inside that slice. The within-family residual
+itself — the perturbation with base voice subtracted, the load-bearing claim
+for the closure — was not retested here and remains at R^2 ~0.
 
 **Verdict: the optimistic branch is dead and the middle branch with it — the
 kernel probe was worse on unseen voices for both inputs, with real control-task
@@ -854,10 +910,11 @@ style space; the direction-collapse test above refutes that directly —
 distinct directions disagree in the audio, sharply. It is that the audio
 readout is narrow, on the order of 5-10 dimensions out of 6,120 per utterance,
 so an encoder can match the audio closely — exactly what the probe-
-reconstruction check shows, both probes landing 14-21 dB from the true style
-in log-mel despite genuine R^2 — while leaving most of the target
-unconstrained. Style-space evaluation catches that; audio proximity alone does
-not. **And the many-utterances lever applies to 2a's training objective as
+reconstruction check shows: both probes' predictions still sit inside the
+different-speaker range on calibrated ECAPA cosine despite genuine R^2 (0.432
+WavLM / 0.383 ECAPA against a same-speaker floor of 0.669 — see the
+correction above), while leaving most of the target unconstrained.
+Style-space evaluation catches that; audio proximity alone does not. **And the many-utterances lever applies to 2a's training objective as
 much as it does to 2b's readout: the limit is additive across utterances, so a
 single-utterance encoder objective is the wrong unit to optimize — train and
 evaluate 2a against multiple renders per style, not one.** It also helps

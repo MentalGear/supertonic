@@ -346,10 +346,29 @@ better single-utterance representation.** A companion check
 (`py/phase2b_wavlm_render.py`, `probe_recovery_triples.json`) reinforces this
 from the other side: refitting both probes and adding a constant train-mean
 baseline, both probes' rendered predictions sit 14-21 dB (log-mel) from the
-true style — as far as, or further than, a full identity swap (16.6 dB) — and
-the train-mean baseline (zero audio read) trails WavLM by only 0.017-0.028
-cosine. The probe's R^2 is real (not noise), but it buys little over reading no
-audio at all.
+true style.
+
+**Correction (2026-09-09): the follow-on claim built on that figure — "as far
+as, or further than, a full identity swap (16.6 dB)," with the train-mean
+baseline trailing WavLM by only 0.017-0.028 cosine — is false and withdrawn.**
+The 16.6 dB threshold came from one pair (M1-F1); calibrated across all 80
+held-out samples, same-speaker pairs (different vocoder seed) average 17.42 dB
+and different-speaker pairs average 17.82 dB — indistinguishable
+distributions, so log-mel distance at this scale cannot separate same- from
+different-speaker and the "as far as a different speaker" framing never held.
+Recalibrated on ECAPA cosine (the metric actually built to measure speaker
+identity): WavLM's reconstructions average 0.432 against true style, inside
+the different-speaker range (anchor 0.225) and short of the same-speaker floor
+(0.669-0.879) — so the reconstructions still fall short of true identity, but
+for a valid reason this time, not the invalid log-mel one. And the margin over
+train-mean is real, not the near-zero 0.017-0.028 first reported: WavLM beats
+train-mean on 80/80 samples and a same-gender impostor on 95%, including
+29/29 on the one held-out identity (M5) where a gender confound cannot
+explain it. **This narrows, not reopens, the closure**: it is evidence about
+which base voice the probes recover (predicted below, in the between-preset
+share of target variance), not about the within-family residual that is the
+closure's load-bearing claim. Full numbers and derivation are in
+[new-plan.md](../new-plan.md) under Phase 2b.
 
 Caveats: one base, one sentence, so the dimensionality figures are
 per-(base, sentence); at eps 0.20 the emphasis profile sits near the
@@ -429,8 +448,10 @@ style space — the direction-collapse test above refutes that; distinct
 directions disagree in the audio, sharply. It is that the audio readout is
 narrow (on the order of 5-10 dimensions out of 6,120 per utterance), so an
 encoder can match the audio closely — as the probe-reconstruction check shows
-directly, both probes landing 14-21 dB from the true style despite genuine
-R^2 — while leaving most of the target unconstrained. Style-space evaluation
+directly, both probes' predictions still landing inside the different-speaker
+range on calibrated ECAPA cosine despite genuine R^2 (0.432 WavLM / 0.383
+ECAPA against a same-speaker floor of 0.669; see the correction above) —
+while leaving most of the target unconstrained. Style-space evaluation
 catches that; audio proximity alone does not. **And because the limit is
 additive across utterances, not representational, train and evaluate 2a
 against many renders per style, not a single-utterance objective — that is the
