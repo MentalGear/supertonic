@@ -51,6 +51,8 @@ Documentation/notebooks:
 - `docs/EMOTION_CALIBRATION.md`: full extraction/calibration guide.
 - `docs/EMOTION_ROADMAP.md`: phased roadmap and naming conventions.
 - `docs/emotion_calibration_colab.ipynb`: resumable Colab workflow.
+- `docs/LISTENING_BENCHES.md`: index of published Artifact listening benches,
+  their generators, and the verdicts they produced.
 
 ## Runtime Contract
 
@@ -125,6 +127,11 @@ No generated audio was deleted during cleanup.
 - Phase 0's companion row-structure probe run the same day via
   `py/phase0_row_locality.py`. `style_ttl` is localized at the row-group level,
   confirmed by ear. Details in the handoff section below.
+- Phase 2b of [new-plan.md](../new-plan.md), the speaker-embedding probe, run on
+  2026-09-09 with the `py/phase2b_*.py` scripts and closed the same day. Neither
+  ECAPA nor WavLM predicts `style_ttl` for unseen voices; WavLM is about twice
+  as good as ECAPA and still recovers none of the perturbation. Details in the
+  handoff section below.
 
 ## Colab Recovery
 
@@ -192,8 +199,233 @@ without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
 voice pair, only the active/inactive split spans all ten presets. Full numbers
 are in [new-plan.md](../new-plan.md) under Phase 0.
 
-Those two runs are the first things to touch the real ONNX graph since the
-`with_deltas()` refactor. The rest of that session's work was static analysis,
+**Phase 2b has been run for both ECAPA and WavLM, came back negative, and is
+closed (2026-09-09).**
+Phase 2 as written was blocked here — its optimizer is external and there is no
+corpus or GPU on this machine — but the engine is its own paired-data generator,
+so synthesizing from known styles gives ground-truth `(audio, style)` pairs. The
+`py/phase2b_*.py` scripts built 1,920 such pairs: six conditions of 320 (preset
+blends, then random per-row perturbations at eps 0.05 through 0.80) over 8 texts
+and 7 training presets, with M5, F4 and F5 held out, seeded per sample, with
+`style_dp` fixed at M1's. **A linear probe from ECAPA embeddings to `style_ttl`
+reaches family-disjoint R^2 of only 0.192 on preset blends and 0.007 at the
+widest perturbation**, against a linear ceiling of 1.000 and 0.746; against the
+held-out set's own mean every one of those figures is negative. Random-split
+R^2 was 0.925-0.962 and tracks "which base preset was this" almost exactly, so
+the naive experiment would have reported ~0.93 and meant nothing. Every control
+agrees: shuffled-target R^2 -0.000 to -0.020 (nothing to fit), an RBF kernel
+probe worse than linear with real control-task leakage, ECAPA itself fine on
+this audio (100% 1-NN speaker ID, chance 10%), multi-utterance averaging worth
+0.011, and a 120-feature MFCC-moment baseline matching or beating ECAPA
+everywhere. All 24 active rows are negative under the family-disjoint split.
+
+The mechanism is the more useful half, and **the mechanism first recorded was
+wrong.** The perturbation sweep found the audio never stops being voice-like —
+F0, voiced fraction, spectral flatness, modulation and WER flat across the whole
+ladder, and a controlled ray at a 72-degree per-row rotation (twice the M1->F1
+angle) still had WER 0.00 — and that was read as "most of style space is nearly
+inaudible, so the audio-to-style inverse is ill-posed in nearly every
+direction." **A listener heard the ray and contradicted it**: the clips clearly
+differ, increasingly with magnitude, and what changes is which words are
+emphasised (M1) and per-word loudness (F1). The flat metrics were all
+utterance-level aggregates, which collapse the time axis the effect lives on. A
+frame-level follow-up (`py/phase2b_prosody_*.py`, reports under the ignored
+`py/results/phase2b_prosody/`) confirms the listener: on M1 from eps 0.20 to
+3.20, utterance level goes +0.4 -> +4.9 dB and per-word energy spreads over 1.6
+-> 10.1 dB while median F0 moves 115 -> 119 Hz and WER stays 0.00; at eps 0.80 a
+random direction moves the log-mel spectrogram 8.4 dB rms against 16.6 dB for a
+full M1->F1 swap. The "3-5x more audible" figure was measured with delta-ECAPA,
+a speaker-verification embedding trained to be prosody-invariant; on
+prosody-sensitive measures the same comparison gives 1.1-3.2x.
+
+**Corrected: style space is anisotropic in what a direction changes, not in
+whether it changes anything.** At matched per-row angle a random direction moves
+median F0 by 40 cents where a preset-aligned one moves it 790, and delta-ECAPA
+3.5-6.5x less, but the log-mel spectrogram only ~1.7x less. So the null means
+**ECAPA cannot see most of what a style direction does**, not that most style
+directions do nothing — there is no information ceiling on an encoder; the
+information is in the audio, it was not in ECAPA. That still kills the probe
+shortcut and still points Phase 2 at the direct encoder (2a), but for a
+different reason: the *encoder input* was the wrong representation, so a
+prosody-bearing input (WavLM, or explicit prosodic features) is worth testing
+before concluding the inverse is ill-posed. The strong two-subspace reading —
+a clean "identity" subspace orthogonal to a "prosody" one — is **not**
+supported: the broadband-versus-spectral-shape split of the diff is essentially
+the same across direction families, and at matched total acoustic change
+the localisation advantage disappears. A graded version is: directions differ in
+what they move and in how much travel it costs, and random directions do reach
+F0 and timbre, just far along the ray. What survives untouched is that inside
+the preset-spanned subspace embedding distance tracks style distance (Spearman
+0.41 against 0.00 for random directions), which still helps Phases 3 and 4.
+Scope: synthetic audio, engine-generated styles, three held-out identities; the
+ray is one seeded random direction per base, word boundaries came from
+faster-whisper tiny.en with a hand-stated repair, F0 above eps 1.60 is
+pyin-unreliable, and `style_dp` was pinned throughout.
+
+**The WavLM half closes the phase, and the positive in it is real.**
+`py/phase2b_wavlm_embed.py` and `py/phase2b_wavlm.py` ran WavLM-large
+(torchaudio's `WAVLM_LARGE`) over all 1,920 existing clips — no subsetting,
+nothing re-synthesized, no audio rendered — reusing the same styles and
+manifest, 0.55 s/clip for 18 minutes, importing `phase2b_probe`'s functions so
+splits, control task and reporting are identical, and refitting ECAPA on the
+same indices for an exact comparison. Best representation is layer 3, mean+std
+pooled, 2048-dim. Family-disjoint R^2 against the train-mean baseline runs
+**0.320 / 0.192 / 0.162 / 0.142 / 0.116 / 0.042** down the ladder from preset
+blends to eps 0.80, against ECAPA's
+0.192 / 0.089 / 0.086 / 0.067 / 0.057 / 0.007 —
+**roughly 2x everywhere, with shuffled-target selectivity ~0.000, so the raw
+score is the selectivity.** The layer sweep over all 24 layers decays
+monotonically from early to late (L1 .323, L3 .320, L4 .303, L5 .288, L12 .260,
+L24 .189 on preset blends), with L3/L4/L5 indistinguishable at the top — which
+**independently corroborates `supertonic.embed`'s choice of layer 4**; the last
+layer would have cost more than half the signal. WavLM also works on this audio:
+1-NN preset ID 0.86-0.95 for layers 1-5 against 10% chance (L3 = 0.887, ECAPA
+1.000), so domain mismatch is not the explanation.
+
+**It does not change the conclusion, and the capacity hypothesis is falsified.**
+The pooled condition is the cleanest statement: raising the reachable ceiling
+from 0.758 to 0.999 — 32 points of extra headroom — bought 5.4 points of actual
+R^2 (0.088 -> 0.142). The probe is information-limited, not ceiling-limited.
+Concatenating four layers to 8,192 dims changed nothing (0.136 vs 0.142) and RBF
+kernel ridge was worse than linear (0.105 vs 0.142 at eps 0.20). The ceiling
+arithmetic in the earlier record was also wrong and is corrected here: the ratio
+is min(d, n_train)/6120, set by the rank of the ridge fit rather than the width
+of its input, so 240 training clips give 240/6120 = 3.9% for WavLM against
+ECAPA's 192/6120 = 3.1% — not 2048/6120 = 33%. The decisive control is the
+**within-family residual**, base preset subtracted so the target is the
+perturbation itself: ECAPA -0.0000 / +0.0000 / +0.0003 and WavLM
+-0.0000 / +0.0000 / +0.0014 at eps 0.05 / 0.20 / 0.80, against a residual
+ceiling of ~0.82. Both collapse to a constant predictor. **WavLM's entire gain
+is on "which base voice was this" and none of it is on the perturbation** —
+78.8% of eps 0.20's target variance is between-base-preset, the probe recovers
+a slice of that and none of the remaining 21.2%.
+
+**The synthesis first recorded here — "audible does not mean identifiable" —
+has since been refuted by the direct test it named as unrun.** What stood at
+this point read the two results above (audible, but WavLM still zero on the
+residual) as: a 6,120-dimensional perturbation collapses onto a low-dimensional
+audible readout — roughly an utterance level plus a per-word emphasis pattern,
+on the order of ten numbers for this sentence — so many different directions
+produce nearly the same audible consequence, and the audio-to-style inverse is
+many-to-one for that reason. It was flagged at the time as inference, with the
+direct test named and explicitly not run: whether distinct random directions at
+matched magnitude produce *similar* audible readouts from the same base.
+
+**That test has now been run (`py/phase2b_direction_collapse.py`,
+2026-09-09) and refutes it.** K=24 mutually near-orthogonal random directions
+from base M1, at the same eps 0.20/0.80 magnitudes, are *distinguishable*, not
+collapsed: pairwise per-word-emphasis correlation between directions is
+weak (mean r +0.158 / +0.060, and 55% of all pairs fall inside the null band
+for unrelated 9-word profiles), two directions typically differ from each
+other in log-mel spectrogram *more* than either differs from the base
+(5.5-10.4 dB between-direction vs. 4.8-9.6 dB from-base), and direction
+identity survives an independent vocoder-latent redraw: 1-NN against the
+other 23 directions picks the true one 70.8% (eps 0.20) / 66.7% (eps 0.80) of
+the time on the log-mel diff map (chance 4.2%, p < 1e-16 both). **Specifically
+refuted:** "many different directions produce nearly the same audible
+consequence," and the claim it licensed that well-chosen audio metrics might
+agree between far-apart styles — measured directly, they disagree, sharply.
+
+**The Phase 2b null survives, for a different reason: the inverse is narrow,
+not many-to-one.** The audible readout genuinely is low-dimensional
+(participation ratio 3.7 of 9 for emphasis, 4.6-7.0 of 23 for the log-mel diff
+map), so perfectly inverting it recovers at most ~7/6,120 = 0.1% of the
+6,120-dimensional target — but those few dimensions are cleanly
+direction-specific rather than shared across directions. The energy contour is
+the one readout that genuinely is shared (pairwise r up to +0.50, and it fails
+cross-latent identification); the emphasis pattern and spectral detail are not.
+**Admission carried forward:** the within-family residual control
+(R^2 +0.0000 to +0.0014, cited above as decisive) is exactly what *both* the
+collapse account and the narrow-inverse account predict, so it never had the
+power to distinguish them — it is not evidence for collapse, nor against
+recoverability.
+
+**The instruction for Phase 2a changes as a result.** The limit is dimensional
+and *additive across utterances*, not a property of the audio representation —
+a different sentence exposes a different 5-10 dimensions, not a better view of
+the same ones. **The lever for an encoder is many utterances per style, not a
+better single-utterance representation.** A companion check
+(`py/phase2b_wavlm_render.py`, `probe_recovery_triples.json`) reinforces this
+from the other side: refitting both probes and adding a constant train-mean
+baseline, both probes' rendered predictions sit 14-21 dB (log-mel) from the
+true style.
+
+**Correction (2026-09-09): the follow-on claim built on that figure — "as far
+as, or further than, a full identity swap (16.6 dB)," with the train-mean
+baseline trailing WavLM by only 0.017-0.028 cosine — is false and withdrawn.**
+The 16.6 dB threshold came from one pair (M1-F1); calibrated across all 80
+held-out samples, same-speaker pairs (different vocoder seed) average 17.42 dB
+and different-speaker pairs average 17.82 dB — indistinguishable
+distributions, so log-mel distance at this scale cannot separate same- from
+different-speaker and the "as far as a different speaker" framing never held.
+Recalibrated on ECAPA cosine (the metric actually built to measure speaker
+identity): WavLM's reconstructions average 0.432 against true style, inside
+the different-speaker range (anchor 0.225) and short of the same-speaker floor
+(0.669-0.879) — so the reconstructions still fall short of true identity, but
+for a valid reason this time, not the invalid log-mel one. And the margin over
+train-mean is real, not the near-zero 0.017-0.028 first reported: WavLM beats
+train-mean on 80/80 samples and a same-gender impostor on 95%, including
+29/29 on the one held-out identity (M5) where a gender confound cannot
+explain it. **This narrows, not reopens, the closure**: it is evidence about
+which base voice the probes recover (predicted below, in the between-preset
+share of target variance), not about the within-family residual that is the
+closure's load-bearing claim. Full numbers and derivation are in
+[new-plan.md](../new-plan.md) under Phase 2b.
+
+**Stated the other way round, this recovery is worth something concrete for
+2a.** 0.432 calibrated ECAPA cosine, beating a no-audio baseline on 80/80
+held-out samples and a same-gender impostor on 95% (100% on M5), with a
+per-identity ordering (F4 0.483 / F5 0.449 / M5 0.374) that independently
+matches a listener's ranking, is real, consistent structure — evidence
+`audio -> style_ttl` is learnable at all, not only evidence of what it fails
+to recover. Its concrete role is as a **warm start for 2a's gradient
+refinement loop**, not as a solution: initializing the per-speaker descent
+from the probe's output should need far fewer steps than starting from a
+random point or the training mean, which is the whole currency Phase 2 is
+trying to buy. The limits stay attached — 0.432 is below the same-speaker
+floor (0.669-0.879), so it is a starting point and not an answer; the
+within-family residual is still ~0, so it contributes nothing to the
+fine-grained perturbation direction; and it is measured on engine-generated
+audio only, so transfer to real recorded voices is untested. It also
+sharpens the many-utterances lever already recorded above: if one utterance
+exposes ~5-10 usable dimensions and the limit is additive, a warm start
+averaged over several utterances of the same speaker should beat a
+single-utterance one — worth trying early in 2a. Full derivation in
+new-plan.md under Phase 2b.
+
+Caveats: one base, one sentence, so the dimensionality figures are
+per-(base, sentence); at eps 0.20 the emphasis profile sits near the
+vocoder-nuisance floor and is weakly identifiable, but the log-mel diff map is
+unambiguous at both magnitudes. Scope on the WavLM half is the scope above: the
+same synthetic audio, the same engine-generated styles from base presets, the
+same three held-out identities. Full numbers, including the direction-collapse
+and probe-reconstruction detail, are in [new-plan.md](../new-plan.md) under
+Phase 2.
+
+**What this means for emotion.** `style_ttl` demonstrably has prosodic reach:
+random directions produce monotone, magnitude-scaled changes in utterance level
+and per-word emphasis while leaving intelligibility (WER 0.00) and pitch
+register intact, and the emphasis effect replicates on two further sentences
+(8.1 and 10.0 dB at eps 0.80). **Emphasis and loudness therefore look reachable
+as emotion axes** without touching the duration tensor. Two caveats go with
+that. First, a random direction produces *unstructured* emphasis jitter, not a
+coherent emotional contour — this shows the lever exists; an actual axis still
+has to be derived. Second, **`style_dp` was pinned throughout the entire
+analysis**, so speech rate and timing — a first-order emotion cue — lie outside
+everything measured here.
+
+Results live under the ignored `py/results/phase2b/` and are not present in a
+fresh clone — 343 MB before the WavLM run, plus `wavlm_feats.npz` at 377 MB
+(all 24 layers, mean+std, for all 1,920 clips). The environment now has `torch`
+2.11.0+cpu, `torchaudio` 2.11.0, `speechbrain` 1.1.1 (for ECAPA) and
+`faster-whisper` 1.2.1 (for WER) installed; the probe scripts need them. The
+torchaudio `WAVLM_LARGE` weights are cached at
+`/root/.cache/torch/hub/checkpoints/wavlm_large.pth` (1.18 GB) and will be
+re-downloaded on a fresh machine.
+
+The two Phase 0 runs were the first things to touch the real ONNX graph since
+the `with_deltas()` refactor, and Phase 2b's 1,920 renders are the largest use
+of it so far. The rest of the 2026-09-08 session's work was static analysis,
 documentation, and numeric tests against synthetic tensors.
 
 The model assets it needed were fetched with
@@ -221,16 +453,42 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
-**Next action is Phase 2 of [new-plan.md](../new-plan.md): amortized style
-inversion.** Phase 0 has passed, its companion probe is done, and Phase 1's
-composition work already landed with `with_deltas()` (1a is verified above), so
-nothing remains at the front of that plan and its sequencing puts Phase 2 next —
-train `audio -> style_ttl` on optimizer-generated pairs (2a) and run the
-ECAPA/WavLM linear probe with its control task and speaker-disjoint splits (2b).
-Report the probe's per-row R^2 over the 24 active rows separately from the
-aggregate; the near-constant rows would flatter a whole-tensor number. The
-ordering is in that document, not in this one; this roadmap's phase order is
-superseded.
+**Next action: Phase 2a — it is the only remaining route.** Phase 0 passed, its
+companion probe is done, Phase 1's composition work already landed with
+`with_deltas()` (1a is verified above), and Phase 2b is closed negative on both
+ECAPA and WavLM. What is left is 2a, the direct `audio -> style_ttl` encoder on
+generated pairs. Two things bound it, and they pull in opposite directions.
+Nothing bounds it from the audio side: the perturbation is audible, and a
+prosody-bearing input does read more of it, so feed 2a WavLM-class features
+(layers 3-5, mean+std, which is also what `supertonic.embed` uses) rather than a
+speaker-verification embedding. Use the 2b probe itself as a **warm start**
+for 2a's refinement loop rather than training from scratch: it lands at 0.432
+calibrated ECAPA speaker similarity, beats a no-audio baseline on 80/80
+held-out samples, and beats a same-gender impostor on 95% — well short of
+true identity but a consistently better starting point than a random or
+mean init, which is what a gradient-refinement loop needs from its init to
+converge in fewer steps (see "Stated the other way round" above). But no
+probe of this class recovered the
+perturbation *direction* from either input, so the encoder is genuinely
+unproven, and **2b's instruction to evaluate it against the optimizer's
+converged style rather than against downstream audio matters more, not less —
+now for a corrected reason.** It is not, as first thought, that a well-chosen
+audio metric might falsely agree between two styles that are far apart in
+style space — the direction-collapse test above refutes that; distinct
+directions disagree in the audio, sharply. It is that the audio readout is
+narrow (on the order of 5-10 dimensions out of 6,120 per utterance), so an
+encoder can match the audio closely — as the probe-reconstruction check shows
+directly, both probes' predictions still landing inside the different-speaker
+range on calibrated ECAPA cosine despite genuine R^2 (0.432 WavLM / 0.383
+ECAPA against a same-speaker floor of 0.669; see the correction above) —
+while leaving most of the target unconstrained. Style-space evaluation
+catches that; audio proximity alone does not. **And because the limit is
+additive across utterances, not representational, train and evaluate 2a
+against many renders per style, not a single-utterance objective — that is the
+lever, not a better per-utterance feature.** Axis work in Phases 3-4 should
+still be fitted inside the preset-spanned subspace where 2b found the
+conditioning is good. The ordering is in [new-plan.md](../new-plan.md), not in
+this one; this roadmap's phase order is superseded.
 
 ## Next Best Steps
 
@@ -240,10 +498,20 @@ superseded.
 2. Generate audio directly with canonical names and update `manifest.json`
    automatically.
 3. Add clipping, RMS/loudness, duration, and finite-audio checks.
-4. Evaluate gain `1.0`, `2.0`, and `3.0`; choose safe defaults based on
-   listening and measurements.
-5. Extract matched recordings for at least five speakers, preferably 8-20.
-6. Compute speaker-normalized deltas and replace the one-speaker assets.
+4. Evaluate `with_deltas()` weights `1.0`, `2.0` and `3.0`; choose safe
+   defaults based on listening and measurements. (The idea stands; only the
+   vocabulary changed. There is no `gain` parameter any more — any finite
+   weight is a gain.)
+5. ~~Extract matched recordings for at least five speakers, preferably
+   8-20~~ — superseded by new-plan.md's sequencing: this is Roadmap Phase 2,
+   and manual multi-speaker extraction is exactly the GPU bottleneck the
+   amortized encoder (new-plan.md Phase 2a) removes. Doing it by hand first
+   "spends days to avoid building the thing that makes it minutes." The next
+   action is the direct `audio -> style_ttl` encoder — see "Next action:
+   Phase 2a" above — not manual extraction.
+6. ~~Compute speaker-normalized deltas and replace the one-speaker
+   assets~~ — same supersession. This becomes 2a's training target once the
+   encoder exists, not a manual step to do first.
 7. Add extraction-step progress callbacks or `tqdm` to the optimizer.
 8. Implement non-nested inline tags through segment synthesis and 10-30 ms
    crossfades.

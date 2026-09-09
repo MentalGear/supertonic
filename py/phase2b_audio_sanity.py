@@ -136,6 +136,11 @@ def main():
             w16 = resample_poly(w, SR, tts.sample_rate).astype(np.float32)
             fp = os.path.join(OUT_DIR, "reference16k", f"{p}_t{ti}.wav")
             sf.write(fp, w16, SR, subtype="PCM_16")
+            # read back from the written PCM_16 file, exactly as the condition
+            # clips are read, so the two sides of the comparison share the same
+            # quantization noise floor (measuring the float array here instead
+            # made reference spectral flatness look 3x lower than it is)
+            w16, _ = sf.read(fp, dtype="float32")
             row = acoustic_metrics(w16)
             row["preset"], row["text_idx"] = p, ti
             if asr:

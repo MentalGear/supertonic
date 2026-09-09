@@ -88,6 +88,38 @@ def fit_kernel(Xtr, Ytr, Xte):
     return np.exp(-gamma * _sqdist(B, A)) @ w, float(best_a)
 
 
+def trivial_baselines(X, Y, itr, ite, active_rows, ndim):
+    """Context for a negative R^2: what do predictors with no learned map score?
+
+    `train_mean` predicts the training set's mean style for everything;
+    `nearest_neighbour` copies the style of the training clip whose embedding is
+    closest in cosine. Both are scored exactly like the probe.
+    """
+    out = {}
+    P = np.repeat(Y[itr].mean(0, keepdims=True), len(ite), axis=0)
+    out["train_mean"] = evaluate(Y[itr], Y[ite], P, active_rows, ndim)
+    Xn = X / np.linalg.norm(X, axis=1, keepdims=True).clip(min=1e-12)
+    nn = (Xn[ite] @ Xn[itr].T).argmax(1)
+    out["nearest_neighbour_embedding"] = evaluate(Y[itr], Y[ite], Y[itr][nn],
+                                                  active_rows, ndim)
+    return out
+
+
+def variance_decomposition(Y, groups):
+    """How much of the target variance is just 'which base preset was this?'.
+
+    A probe scoring well on a set whose variance is mostly between-preset is
+    doing speaker identification, not style recovery.
+    """
+    tot = ((Y - Y.mean(0)) ** 2).sum()
+    between = 0.0
+    for g in np.unique(groups):
+        m = groups == g
+        between += m.sum() * ((Y[m].mean(0) - Y.mean(0)) ** 2).sum()
+    return {"between_base_preset_share": float(between / tot),
+            "within_base_preset_share": float(1.0 - between / tot)}
+
+
 def dimensionality(Y):
     """Empirical intrinsic dimensionality of a style set. Censored by n samples."""
     Yc = Y - Y.mean(0)
@@ -244,6 +276,11 @@ def main():
             ).astype(np.float64)
             entry["dimensionality_residual_style"] = dimensionality(Y_resid)
 
+        entry["trivial_baselines_family_disjoint"] = trivial_baselines(
+            feature_sets["ecapa"], Y_active, itr_fam, ite_fam, active_rows, ndim)
+        if eps is not None:
+            entry["variance_decomposition"] = variance_decomposition(
+                Y_active[idx], base[idx])
         entry["probes"] = {}
         for fname, fitter in fitters:
             for xname, X in feature_sets.items():
@@ -260,17 +297,24 @@ def main():
                 res["whole_tensor_r2_family_disjoint"] = agg_r2(ssr, sst)
                 if Y_resid is not None:
                     pos = {g: i for i, g in enumerate(idx)}
-                    rtr = np.array([pos[i] for i in itr_fam])
-                    rte = np.array([pos[i] for i in ite_fam])
-                    Pr, _ = fitter(X[itr_fam], Y_resid[rtr], X[ite_fam])
-                    ev = evaluate(Y_resid[rtr], Y_resid[rte], Pr, active_rows, ndim)
-                    Yrc = shuffled_targets(Y_resid, np.arange(len(Y_resid)))
-                    Pc, _ = fitter(X[itr_fam], Yrc[rtr], X[ite_fam])
-                    evc = evaluate(Yrc[rtr], Yrc[rte], Pc, active_rows, ndim)
-                    res["within_family_residual"] = {
-                        "real": ev, "control_task": evc,
-                        "selectivity_r2": ev["r2_testmean_baseline"] - evc["r2_testmean_baseline"],
-                    }
+                    for tag, (gtr, gte) in {
+                        "within_family_residual": (itr_fam, ite_fam),
+                        # seen base presets: isolates recovery of the perturbation
+                        # itself from the confound of an unseen speaker
+                        "within_family_residual_random_split": (itr_rnd, ite_rnd),
+                    }.items():
+                        rtr = np.array([pos[i] for i in gtr])
+                        rte = np.array([pos[i] for i in gte])
+                        Pr, _ = fitter(X[gtr], Y_resid[rtr], X[gte])
+                        ev = evaluate(Y_resid[rtr], Y_resid[rte], Pr, active_rows, ndim)
+                        Yrc = shuffled_targets(Y_resid, np.arange(len(Y_resid)))
+                        Pc, _ = fitter(X[gtr], Yrc[rtr], X[gte])
+                        evc = evaluate(Yrc[rtr], Yrc[rte], Pc, active_rows, ndim)
+                        res[tag] = {
+                            "real": ev, "control_task": evc,
+                            "selectivity_r2": ev["r2_testmean_baseline"]
+                            - evc["r2_testmean_baseline"],
+                        }
                 entry["probes"][key] = res
                 print(f"[{c}] {key}: family-disjoint R2="
                       f"{res['family_disjoint_split']['real']['r2_testmean_baseline']:.4f} "
