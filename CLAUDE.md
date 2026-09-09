@@ -159,18 +159,22 @@ inline burns the context the main loop needs for judgment.
   known-same and known-different pairs; if those two distributions overlap,
   the distance cannot support the claim.** A threshold derived from a single
   pair is not a calibration.
-- **Check an estimator's expressive ceiling before reading its null as
-  evidence of absence.** The same failure mode as the bullet above — an
-  uncalibrated instrument mistaken for a fact about the world — applies to
-  regressions, not just distances. A ridge (or kernel-ridge) fit's predictions
-  are an affine combination of its training targets, confined to a subspace
-  of dimension at most n_train; against a target of much higher dimension the
-  null is forced regardless of what the input carries. Phase 2b's
-  within-family residual is the incident: 240 training samples against
-  6,144 target dimensions gave an oracle ceiling of ~2.6% R^2, yet the
-  reported null of ~0 was read as "audio does not carry the perturbation."
-  That reading is not available: the design could not have produced any other
-  number, so the honest verdict is inconclusive, not negative. Compute the
-  ceiling first, and if the null sits under it, report the absence of power
-  rather than an absence of effect.
+- **An estimator's expressive ceiling must be checked out of sample — an
+  in-sample headroom statistic is a function of matrix shape, not content,
+  and will certify any design.** Same failure mode as the bullet above — an
+  uncalibrated instrument mistaken for a fact about the world — but here the
+  check itself, not its absence, was the problem. Phase 2b did compute a
+  ceiling before reading its within-family residual null: participation
+  ratio (~303) and the fraction of residual variance inside the top-n_train
+  principal components (~0.82, `var_in_top_k`, `phase2b_wavlm.py`), read
+  together as 82% headroom. Both choose their subspace from the same data
+  they score, and `py/phase2a_ceiling_null.py` reproduces both numbers to
+  four significant figures by running the identical diagnostics on pure
+  isotropic noise — they measure (n, d, n_train) alone. What actually binds a
+  ridge is out-of-sample: predictions lie in the training targets' span, so a
+  fresh direction reaches only about n_train/d (here 3.9%, matching the
+  noise sim and Phase 2b's own reachable fraction, and consistent with the
+  oracle's ~2.6% R^2 ceiling under the probe's own scoring). Operational
+  test: run the diagnostic on noise of the same shape — if it returns the
+  same number, it is measuring the shape.
 - Active research direction: [new-plan.md](new-plan.md).

@@ -395,24 +395,35 @@ averaged over several utterances of the same speaker should beat a
 single-utterance one — worth trying early in 2a. Full derivation in
 new-plan.md under Phase 2b.
 
-**Correction (`py/phase2a_ceiling_audit.py`, 2026-09-09): the within-family
-residual null was underpowered by construction, independent of the
-narrow-inverse account above.** Ridge regression's predictions are an affine
-combination of its training targets, confined to a subspace of dimension at
-most n_train. The residual control fit n_train=240 (numerical rank 239 after
-centering) against a target of 24 active rows x 256 = 6,144 ambient
-dimensions (tangent space 6,120); a fresh random direction has expected
-squared projection onto a fixed 239-dim subspace of only 239/6144 = 3.9%, so
-the metric was capped near zero regardless of what the audio contained.
-Scoring the oracle (test targets projected onto the training row space) with
-the same `phase2b_probe.evaluate()` that produced the null gives a ceiling of
-0.0264 / 0.0258 / 0.0237 / 0.0197 / 0.0133 R^2 at eps 0.05 / 0.10 / 0.20 /
-0.40 / 0.80, against achieved values of -0.0136 to -0.0298 (best over
-ECAPA/WavLM x linear/kernel ridge) — every achieved value sits below its
-ceiling, as a valid bound requires. A second, probe-code-free check
-(per-base-preset mean removed) gives a reachable-energy fraction of
-0.0385 / 0.0379 / 0.0384 at eps 0.05 / 0.20 / 0.80, flat against
-rank/6144 = 0.0379 — matching the analytic prediction to three decimals.
+**Correction (`py/phase2a_ceiling_audit.py`, `py/phase2a_ceiling_null.py`,
+2026-09-09): the within-family residual null was underpowered by
+construction, and the underpowering evaded the ceiling check Phase 2b
+actually ran.** Phase 2b did check whether its design had room to succeed,
+with two diagnostics computed on the residual itself (`var_in_top_k`,
+`py/phase2b_wavlm.py:70`, called at lines 278-281): the participation ratio,
+~303 per eps condition (303.20 / 303.30 / 303.15 / 302.78 / 298.17), and the
+fraction of residual variance inside its top-n_train principal components,
+~0.82 (0.8225 / 0.8222 / 0.8225 / 0.8228 / 0.8247) — read together, 82%
+headroom, which is why a measured R^2 near zero was taken as a fact about
+audio. Both diagnostics are in-sample: they ask how much variance an
+optimally-chosen k-dim subspace captures, choosing that subspace from the
+same data being scored. `phase2a_ceiling_null.py` runs the identical
+diagnostics, at the identical shape (n=320, d=6144, n_train=240, 16 seeds),
+on pure isotropic Gaussian noise — data with nothing predictable in it — and
+reproduces both reported numbers to four significant figures: participation
+ratio 303.17 ± 0.06, in-sample top-240-PC variance 0.8225 ± 0.0002. They are
+functions of (n, d, n_train), not of content, and will certify any design.
+A ridge cannot choose its subspace that way: its predictions are an affine
+combination of the *training* targets, confined to a subspace of dimension
+at most n_train, so a fresh test direction is reachable only to about
+n_train/d — on the noise simulation, 0.0392 ± 0.0003, matching the analytic
+n_train/d = 0.0391 and Phase 2b's own measured reachable fractions of
+0.0385 / 0.0379 / 0.0384. Scoring the oracle (test targets projected onto the
+training row space) with the same `phase2b_probe.evaluate()` that produced
+the null gives a ceiling of 0.0264 / 0.0258 / 0.0237 / 0.0197 / 0.0133 R^2 at
+eps 0.05 / 0.10 / 0.20 / 0.40 / 0.80, against achieved values of -0.0136 to
+-0.0298 (best over ECAPA/WavLM x linear/kernel ridge) — every achieved value
+sits below its ceiling, as a valid bound requires.
 **The within-family residual null is downgraded from closed-negative to
 inconclusive: the design lacked the power to detect an effect of any size up
 to ~2.6% R^2.** This is not "audio does carry the perturbation" — it is "we

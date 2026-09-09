@@ -1011,6 +1011,17 @@ check (per-base-preset mean removed, reachable-energy fraction) gives
 rank/6144 = 0.0379 — matching the analytic prediction to three decimals and
 confirming this is not an artifact of `phase2b_probe`'s code path.
 
+**Phase 2b did check its ceiling first — the check itself was in-sample, and
+that is what failed.** Its two diagnostics (participation ratio ~303,
+variance-in-top-n_train ~0.82, `phase2b_wavlm.py:70`/278-281) ask how much
+variance an optimally-chosen k-dim subspace captures, choosing that subspace
+from the data being scored. `py/phase2a_ceiling_null.py` runs both on pure
+isotropic noise at the identical shape and reproduces them to four
+significant figures (303.17 ± 0.06; 0.8225 ± 0.0002) — they measure
+(n, d, n_train), not content. The out-of-sample number a ridge is actually
+bound by is n_train/d ≈ 0.039, matching the noise sim (0.0392 ± 0.0003) and
+2b's measured reachable fractions almost exactly.
+
 **The within-family residual null is downgraded from closed-negative to
 inconclusive: the design lacked the power to detect an effect of any size up
 to ~2.6% R^2.** The correct statement is not "audio does carry the
