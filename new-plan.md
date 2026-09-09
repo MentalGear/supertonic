@@ -1,9 +1,9 @@
 # Parametric Voice Space — Research Plan
 
 Status: proposal. Supersedes the `new-plan` sketch. Phase 0 was run on
-2026-09-08 and passed; Phase 2b's ECAPA probe was run on 2026-09-09 and came
-back negative, with WavLM still pending. See the results recorded under those
-phases.
+2026-09-08 and passed; Phase 2b was run on 2026-09-09 with both ECAPA and
+WavLM, came back negative on both, and is closed. See the results recorded
+under those phases.
 
 ## Goal
 
@@ -350,13 +350,17 @@ of one fixed operating point.
 Evaluate the encoder against **the optimizer's own converged style**, not only
 against downstream audio quality. Audio metrics masked systematic encoder bias
 in the early image-inversion work, and the same failure is available here. The
-2b result below sharpens this, though not in the way first recorded: the
-constraint is the *input representation*, not an information ceiling. ECAPA
-cannot see most of what a style direction does — it is trained to be
+2b result below sharpens this twice, and neither time in the way first
+recorded. First: the constraint is not an information ceiling in the audio.
+ECAPA cannot see most of what a style direction does — it is trained to be
 prosody-invariant, and most of what a random direction does is prosodic — so
-feed this encoder something that carries prosody, and judge it against the
-converged style, because an audio metric chosen as badly as delta-ECAPA was
-would report the same false negative as success.
+feed this encoder something that carries prosody. Second, against the obvious
+hope: WavLM, which does carry prosody, is twice as good as ECAPA at the full
+target and still recovers exactly none of the perturbation direction. So judge
+the encoder against the optimizer's converged style — that instruction matters
+*more* after 2b, not less. No probe of this class recovered a style direction
+from audio, and an audio metric chosen as badly as delta-ECAPA was would report
+the same false negative as success.
 
 **2b. Probe from an off-the-shelf speaker encoder.** Fit a map
 `ECAPA/WavLM embedding -> style_ttl`. Run this explicitly as a **linear probe
@@ -406,7 +410,7 @@ so this is a genuinely open measurement with no baseline to check against.
 Report the probe result before building on either branch. It changes how much
 of phase 3 is needed.
 
-### Result: negative for ECAPA (2026-09-09); WavLM pending
+### Result: negative for ECAPA and WavLM (2026-09-09); phase closed
 
 Phase 2 as written is blocked on this machine — the optimizer is external, and
 there is no corpus and no GPU — but 2b's question needed none of that. The
@@ -474,9 +478,12 @@ Controls:
   perturbation direction alone): R^2 -0.013 to -0.031, and exactly +0.0000
   against the constant predictor, LOO-CV having selected the maximum ridge
   penalty and collapsed the probe to a constant. Honest caveat: that residual is
-  isotropic in 6,120 dimensions, so any linear map from 192 inputs has a
-  structural ceiling of 192/6120 = 3.1%. It is a weak test by construction; the
-  full-target numbers are the load-bearing evidence.
+  isotropic in 6,120 dimensions, so a ridge fit here has a structural ceiling
+  of min(d, n_train)/6120 — set by the *rank* of the fit, not by the width of
+  the input. With 192 ECAPA dimensions and 240 training clips that is
+  192/6120 = 3.1%. (The WavLM run below is why the rank form is the right one:
+  2048 inputs do not buy 33%, they buy the same 240/6120 = 3.9%.) It is a weak
+  test by construction; the full-target numbers are the load-bearing evidence.
 - **Per row**, as this phase asks: all 24 active rows are negative under the
   family-disjoint split at every condition. Least bad at eps 0.20 are rows 6 and
   45 (-0.40), 23 (-0.48) and 22 (-0.54); worst is row 8 (-2.79). The
@@ -608,30 +615,144 @@ unreliable (pyin octave errors), so only the medians are quoted there; and
 The general lesson is now in [CLAUDE.md](CLAUDE.md): compare spectrograms before
 aggregates, and level-match before listening.
 
-**Verdict: the optimistic branch is dead and the middle branch with it — the
-kernel probe was worse on unseen voices, with real control-task leakage. This
-lands on the third branch: style space encodes something meaningfully different
-from speaker-verification space, and the direct encoder (2a) is the viable
-route. ECAPA only; the WavLM half of this probe is still running, so Phase 2b
-is not closed.**
+**The WavLM half (2026-09-09): twice as good, and the same answer.** Run with
+`py/phase2b_wavlm_embed.py` and `py/phase2b_wavlm.py`. WavLM-large through
+torchaudio's `WAVLM_LARGE` bundle over all 1,920 existing clips — no subsetting,
+nothing re-synthesized, no audio rendered — reusing the same `styles.npz` and
+manifest, at 0.55 s/clip for 18 minutes total, with all 24 layers mean+std
+pooled and cached to the ignored `py/results/phase2b/wavlm_feats.npz` (377 MB).
+It imports `phase2b_probe`'s functions directly, so splits, control task and
+reporting are identical, and it refits ECAPA on the same indices for an exact
+comparison.
 
-Two consequences worth carrying forward, one each way. It shapes 2a: the
-constraint is on the encoder's *input representation*, not on how much of the
-style is recoverable in principle, so 2a should be fed something that carries
-prosody (WavLM, or explicit prosodic features) rather than a
-speaker-verification embedding — and this phase's instruction to evaluate it
-against the optimizer's converged style rather than against downstream audio
-still matters, because audio metrics chosen as badly as delta-ECAPA was would
-report the same false negative. And it helps Phases 3 and 4: *within* the
-preset-spanned subspace, embedding distance does track style distance (Spearman
+Best representation: layer 3, mean+std pooled, 2048-dim. Family-disjoint R^2
+against the train-mean baseline — the metric the table above quotes:
+
+| Condition | ECAPA | WavLM L3 | ECAPA ceiling | WavLM ceiling | MFCC-moment |
+|---|---|---|---|---|---|
+| preset blends | 0.192 | 0.320 | 1.000 | 1.000 | 0.286 |
+| eps 0.05 | 0.089 | 0.192 | 0.995 | 0.997 | 0.085 |
+| eps 0.10 | 0.086 | 0.162 | 0.979 | 0.988 | 0.080 |
+| eps 0.20 | 0.067 | 0.142 | 0.933 | 0.961 | 0.062 |
+| eps 0.40 | 0.057 | 0.116 | 0.834 | 0.904 | 0.057 |
+| eps 0.80 | 0.007 | 0.042 | 0.746 | 0.853 | 0.002 |
+| pooled | 0.088 | 0.142 | 0.758 | 0.999 | 0.066 |
+
+WavLM roughly doubles ECAPA in every condition, with selectivity intact —
+shuffled-target R^2 is ~0.000 everywhere, so the raw score *is* the selectivity.
+That is a real improvement and it is worth stating plainly before saying why it
+does not reopen the phase.
+
+- **The capacity hypothesis was tested and falsified.** The pooled row states it
+  cleanest: raising the reachable ceiling from 0.758 to 0.999 — 32 points of
+  fresh headroom — bought 5.4 points of actual R^2. The probe is
+  information-limited, not ceiling-limited. Concatenating four layers to 8,192
+  dimensions changed nothing (0.136 pooled against 0.142 for the single layer),
+  and an RBF kernel ridge was *worse* than linear (0.105 against 0.142 at
+  eps 0.20), so the middle branch is ruled out for WavLM as it was for ECAPA.
+- **The ceiling arithmetic, corrected.** The earlier reasoning — including the
+  framing in the residual control above — divided input width by target
+  dimension. That is wrong. Ridge fitted on 240 training clips has rank at most
+  240 whatever the input width, so the per-condition ratio is
+  min(d, n_train)/6120 = 240/6120 = 3.9%, barely wider than ECAPA's
+  192/6120 = 3.1%, not 2048/6120 = 33%. WavLM's dimensional advantage only
+  becomes real in the pooled condition, where n_train = 1,440 — and that is
+  precisely the condition where it converts least.
+- **The decisive control is the within-family residual**, with the base preset
+  subtracted so the target is the perturbation itself rather than a 7-way
+  speaker ID. ECAPA gives -0.0000 / +0.0000 / +0.0003 and WavLM
+  -0.0000 / +0.0000 / +0.0014 at eps 0.05 / 0.20 / 0.80, against a residual
+  ceiling of ~0.82. Both collapse to a constant predictor, identically.
+  **WavLM's entire gain is on "which base voice was this" and none of it is on
+  the perturbation.** The variance decomposition agrees: 78.8% of eps 0.20's
+  target variance is between-base-preset, the probe recovers a slice of that
+  share and none of the remaining 21.2%.
+- **Remaining controls.** Random-split inflation reproduces ECAPA's almost
+  exactly (0.949 / 0.967 / 0.910 / 0.740 / 0.414 / 0.124), confirming that the
+  inflation was "which preset was this" rather than an artifact of one
+  representation. Raw-cosine 1-NN is meaningless on WavLM — every pair sits at
+  cos ~0.98 off a shared offset — so a z-scored form was added, standardized on
+  the training split like the ridge probe's scaler; it is negative in every
+  condition except preset blends. Per-row R^2 is negative at all 24 active rows
+  (eps 0.20: min -3.89, median -0.53, max -0.23), and whole-tensor R^2 is -0.73
+  at eps 0.20.
+- **WavLM works on this audio.** 1-NN preset ID over 10 presets x 8 sentences
+  scores 0.86-0.95 for layers 1-5 against 10% chance; L3 is 0.887 where ECAPA is
+  1.000. Slightly below ECAPA, as expected of a model not trained for speaker
+  discrimination, and far above chance. Domain mismatch is not the explanation.
+- **Layer sweep over all 24 layers: monotone decay from early to late.**
+  Family-disjoint R^2 on preset blends / eps 0.05 / eps 0.20 — L1 .323/.141/.106,
+  L3 .320/.192/.142, L4 .303/.184/.134, L5 .288/.188/.140, L12 .260/.125/.089,
+  L18 .216/.128/.103, L24 .189/.086/.021. L3, L4 and L5 are indistinguishable at
+  the top, which **independently corroborates `supertonic.embed`'s choice of
+  layer 4**; taking the last layer would have cost more than half the signal.
+- **Pooling.** mean+std beats mean-only slightly (0.192 against 0.167 at
+  eps 0.05), while mean-only is the better speaker-ID feature (0.89 against
+  0.81). Richer frame-level pooling was deliberately not built, for a reason
+  worth recording: the 50 rows of `style_ttl` come from learned query vectors
+  attending over the reference, so they have no time alignment for frames to be
+  aligned to, and the only temporal variation in this corpus is the 8 fixed
+  texts, which is nuisance. The std term *is* the frame-level probe, and it buys
+  about 0.01.
+
+**The synthesis: audible does not mean identifiable.** The correction above
+established that random `style_ttl` perturbations are plainly audible — they
+move the log-mel spectrogram, lift utterance level by up to +4.9 dB, and
+redistribute per-word emphasis over 10 dB — and that ECAPA's apparent
+"inaudibility" was an artifact of using a prosody-invariant embedding as an
+audibility meter. It named a prosody-bearing input as the thing to test "before
+concluding the inverse is ill-posed." That test has now been run, and WavLM —
+which does carry prosody, where ECAPA is trained not to — is twice as good at
+the full target and still returns *exactly zero* on the within-family residual.
+The two results say together what neither says alone: a 6,120-dimensional
+perturbation collapses onto a low-dimensional audible readout — roughly an
+utterance level plus a per-word emphasis pattern, on the order of ten numbers
+for this sentence. A listener plainly hears that something changed; the map from
+that audible consequence back to the direction that caused it is many-to-one,
+and therefore not invertible by a probe of this class. **So the inverse is
+ill-posed after all — but for a quite different reason than the original wrong
+claim.** Not "the audio does not contain the change", which was false and stays
+false, but "many different high-dimensional directions produce nearly the same
+low-dimensional audible consequence."
+
+Held at the right strength: this is the reading that reconciles both
+measurements, not a separately proven fact. The dimensional-collapse account is
+inference from them. The direct test would be to check whether distinct random
+directions at matched magnitude produce *similar* audible readouts — energy
+contour and per-word emphasis — from the same base. That has not been done.
+
+**Verdict: the optimistic branch is dead and the middle branch with it — the
+kernel probe was worse on unseen voices for both inputs, with real control-task
+leakage on ECAPA. This lands on the third branch: style space encodes something
+meaningfully different from what an off-the-shelf audio encoder reads off the
+waveform, and the direct encoder (2a) is the viable route. Both halves are now
+in — ECAPA, then WavLM at roughly twice the R^2 with clean selectivity and
+still exactly zero on the perturbation — so Phase 2b is closed.**
+
+Two consequences worth carrying forward, one each way. It shapes 2a, and more
+sharply now that both inputs are in. There is no information ceiling in the
+audio — the change is audible, and a prosody-bearing input does read more of it,
+so feed 2a WavLM-class features (layer 3-5, mean+std) rather than a
+speaker-verification embedding. But the perturbation *direction* was not
+recoverable by any probe of this class from either input, so what remains
+unbounded by 2b is the encoder, not the inverse problem as a whole: 2a is worth
+running, and its evaluation against the optimizer's converged style rather than
+against downstream audio matters *more* after this, not less. Audio metrics
+chosen as badly as delta-ECAPA was would report the same false negative — and,
+after the synthesis above, even well-chosen audio metrics may agree between two
+styles that are far apart in style space. And it helps Phases 3 and 4: *within*
+the preset-spanned subspace, embedding distance does track style distance (Spearman
 0.41, against 0.00 for random directions at every magnitude), so deriving axes
 there is far better conditioned than the 6,144-parameter framing suggests.
 
 Still open:
 
-- **WavLM.** Named alongside ECAPA above and not yet tested; a WavLM probe is
-  running. The ECAPA result stands on its own, but "speaker embeddings do not
-  predict `style_ttl`" is not established until that lands.
+- **Whether the collapse account is right.** The synthesis above is inference
+  from two measurements, not a third measurement. The direct test is to render
+  distinct random directions at matched magnitude from one base and ask whether
+  their audible readouts — utterance level, energy contour, per-word emphasis —
+  are near-identical. If they are, the many-to-one story is confirmed, and that
+  low-dimensional readout is the thing an axis should be defined over. Not run.
 - **Where the sampled styles live.** Every style here was engine-generated from
   a base preset, so the sampled set may not reach where real speakers do. That
   bounds the answer rather than closing it — and closing it needs
@@ -951,8 +1072,9 @@ README already sells emotion as this fork's differentiator.
 4. **Presentation axis** — the first between-speaker axis, but the easiest
    one: gender is ~99-100% linearly decodable from ECAPA, so the Phase 2b
    probe shortcut actually applies here. With the caveat that the probe itself
-   came back negative for ECAPA, so presentation must be derived in style
-   space rather than read across from an ECAPA direction; what survives is
+   came back negative for ECAPA and for WavLM, so presentation must be derived
+   in style space rather than read across from an embedding direction; what
+   survives is
    that presentation lies inside the preset-spanned subspace, where 2b found
    the conditioning is good. Phase 0's probe adds that in style
    space the M1->F1 difference is spread over roughly twenty rows, not one

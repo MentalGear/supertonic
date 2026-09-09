@@ -126,8 +126,9 @@ No generated audio was deleted during cleanup.
   `py/phase0_row_locality.py`. `style_ttl` is localized at the row-group level,
   confirmed by ear. Details in the handoff section below.
 - Phase 2b of [new-plan.md](../new-plan.md), the speaker-embedding probe, run on
-  2026-09-09 with the `py/phase2b_*.py` scripts. ECAPA does not predict
-  `style_ttl` for unseen voices; the WavLM half is still running. Details in the
+  2026-09-09 with the `py/phase2b_*.py` scripts and closed the same day. Neither
+  ECAPA nor WavLM predicts `style_ttl` for unseen voices; WavLM is about twice
+  as good as ECAPA and still recovers none of the perturbation. Details in the
   handoff section below.
 
 ## Colab Recovery
@@ -196,7 +197,8 @@ without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
 voice pair, only the active/inactive split spans all ten presets. Full numbers
 are in [new-plan.md](../new-plan.md) under Phase 0.
 
-**Phase 2b has been run for ECAPA and it came back negative (2026-09-09).**
+**Phase 2b has been run for both ECAPA and WavLM, came back negative, and is
+closed (2026-09-09).**
 Phase 2 as written was blocked here — its optimizer is external and there is no
 corpus or GPU on this machine — but the engine is its own paired-data generator,
 so synthesizing from known styles gives ground-truth `(audio, style)` pairs. The
@@ -253,12 +255,73 @@ what they move and in how much travel it costs, and random directions do reach
 F0 and timbre, just far along the ray. What survives untouched is that inside
 the preset-spanned subspace embedding distance tracks style distance (Spearman
 0.41 against 0.00 for random directions), which still helps Phases 3 and 4.
-Scope: synthetic audio, engine-generated styles, three held-out identities,
-ECAPA only; the ray is one seeded random direction per base, word boundaries
-came from faster-whisper tiny.en with a hand-stated repair, F0 above eps 1.60 is
-pyin-unreliable, and `style_dp` was pinned throughout. **A WavLM probe is
-running in parallel and Phase 2b is not closed until it lands.** Full numbers
-are in [new-plan.md](../new-plan.md) under Phase 2.
+Scope: synthetic audio, engine-generated styles, three held-out identities; the
+ray is one seeded random direction per base, word boundaries came from
+faster-whisper tiny.en with a hand-stated repair, F0 above eps 1.60 is
+pyin-unreliable, and `style_dp` was pinned throughout.
+
+**The WavLM half closes the phase, and the positive in it is real.**
+`py/phase2b_wavlm_embed.py` and `py/phase2b_wavlm.py` ran WavLM-large
+(torchaudio's `WAVLM_LARGE`) over all 1,920 existing clips — no subsetting,
+nothing re-synthesized, no audio rendered — reusing the same styles and
+manifest, 0.55 s/clip for 18 minutes, importing `phase2b_probe`'s functions so
+splits, control task and reporting are identical, and refitting ECAPA on the
+same indices for an exact comparison. Best representation is layer 3, mean+std
+pooled, 2048-dim. Family-disjoint R^2 against the train-mean baseline runs
+**0.320 / 0.192 / 0.162 / 0.142 / 0.116 / 0.042** down the ladder from preset
+blends to eps 0.80, against ECAPA's
+0.192 / 0.089 / 0.086 / 0.067 / 0.057 / 0.007 —
+**roughly 2x everywhere, with shuffled-target selectivity ~0.000, so the raw
+score is the selectivity.** The layer sweep over all 24 layers decays
+monotonically from early to late (L1 .323, L3 .320, L4 .303, L5 .288, L12 .260,
+L24 .189 on preset blends), with L3/L4/L5 indistinguishable at the top — which
+**independently corroborates `supertonic.embed`'s choice of layer 4**; the last
+layer would have cost more than half the signal. WavLM also works on this audio:
+1-NN preset ID 0.86-0.95 for layers 1-5 against 10% chance (L3 = 0.887, ECAPA
+1.000), so domain mismatch is not the explanation.
+
+**It does not change the conclusion, and the capacity hypothesis is falsified.**
+The pooled condition is the cleanest statement: raising the reachable ceiling
+from 0.758 to 0.999 — 32 points of extra headroom — bought 5.4 points of actual
+R^2 (0.088 -> 0.142). The probe is information-limited, not ceiling-limited.
+Concatenating four layers to 8,192 dims changed nothing (0.136 vs 0.142) and RBF
+kernel ridge was worse than linear (0.105 vs 0.142 at eps 0.20). The ceiling
+arithmetic in the earlier record was also wrong and is corrected here: the ratio
+is min(d, n_train)/6120, set by the rank of the ridge fit rather than the width
+of its input, so 240 training clips give 240/6120 = 3.9% for WavLM against
+ECAPA's 192/6120 = 3.1% — not 2048/6120 = 33%. The decisive control is the
+**within-family residual**, base preset subtracted so the target is the
+perturbation itself: ECAPA -0.0000 / +0.0000 / +0.0003 and WavLM
+-0.0000 / +0.0000 / +0.0014 at eps 0.05 / 0.20 / 0.80, against a residual
+ceiling of ~0.82. Both collapse to a constant predictor. **WavLM's entire gain
+is on "which base voice was this" and none of it is on the perturbation** —
+78.8% of eps 0.20's target variance is between-base-preset, the probe recovers
+a slice of that and none of the remaining 21.2%.
+
+**The synthesis, and the settled reading of the phase: audible does not mean
+identifiable.** The correction above says random `style_ttl` perturbations are
+plainly audible and that ECAPA's apparent "inaudibility" was an artifact of
+using a prosody-invariant embedding as an audibility meter; it named a
+prosody-bearing input as the thing to test before concluding the inverse is
+ill-posed. WavLM is that input, and it returns exactly zero on the residual. Put
+together: a 6,120-dimensional perturbation collapses onto a low-dimensional
+audible readout — roughly an utterance level plus a per-word emphasis pattern,
+on the order of ten numbers for this sentence. A listener plainly hears that
+something changed; the map from that audible consequence back to the direction
+that caused it is many-to-one, and therefore not invertible by a probe of this
+class. **So the inverse is ill-posed after all — but for a quite different
+reason than the original wrong claim.** Not "the audio does not contain the
+change", which was false and stays false, but "many different high-dimensional
+directions produce nearly the same low-dimensional audible consequence." Held at
+the right strength: this is the reading that reconciles both measurements, not a
+separately proven fact — the dimensional-collapse account is inference from
+them. The direct test, not run, is whether distinct random directions at matched
+magnitude produce similar audible readouts (energy contour, per-word emphasis)
+from the same base.
+
+Scope on the WavLM half is the scope above: the same synthetic audio, the same
+engine-generated styles from base presets, the same three held-out identities.
+Full numbers are in [new-plan.md](../new-plan.md) under Phase 2.
 
 **What this means for emotion.** `style_ttl` demonstrably has prosodic reach:
 random directions produce monotone, magnitude-scaled changes in utterance level
@@ -272,10 +335,14 @@ has to be derived. Second, **`style_dp` was pinned throughout the entire
 analysis**, so speech rate and timing — a first-order emotion cue — lie outside
 everything measured here.
 
-Results live under the ignored `py/results/phase2b/` (343 MB) and are not
-present in a fresh clone. The environment now has `torch` 2.11.0+cpu,
-`torchaudio` 2.11.0, `speechbrain` 1.1.1 (for ECAPA) and `faster-whisper` 1.2.1
-(for WER) installed; the probe scripts need them.
+Results live under the ignored `py/results/phase2b/` and are not present in a
+fresh clone — 343 MB before the WavLM run, plus `wavlm_feats.npz` at 377 MB
+(all 24 layers, mean+std, for all 1,920 clips). The environment now has `torch`
+2.11.0+cpu, `torchaudio` 2.11.0, `speechbrain` 1.1.1 (for ECAPA) and
+`faster-whisper` 1.2.1 (for WER) installed; the probe scripts need them. The
+torchaudio `WAVLM_LARGE` weights are cached at
+`/root/.cache/torch/hub/checkpoints/wavlm_large.pth` (1.18 GB) and will be
+re-downloaded on a fresh machine.
 
 The two Phase 0 runs were the first things to touch the real ONNX graph since
 the `with_deltas()` refactor, and Phase 2b's 1,920 renders are the largest use
@@ -307,17 +374,23 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
-**Next action: land the WavLM half of Phase 2b, then Phase 2a.** Phase 0 passed,
-its companion probe is done, Phase 1's composition work already landed with
-`with_deltas()` (1a is verified above), and 2b's ECAPA probe is in and negative.
-What remains in 2b is the WavLM probe now running; the same scripts and splits
-apply, so slot its number in beside ECAPA's rather than re-running the design.
-After that the plan's remaining route is 2a, the direct `audio -> style_ttl`
-encoder on generated pairs — evaluated against a converged style rather than
-against downstream audio, since 2b showed audio metrics cannot see most of the
-target. Axis work in Phases 3-4 should be fitted inside the preset-spanned
-subspace where 2b found the conditioning is good. The ordering is in
-[new-plan.md](../new-plan.md), not in this one; this roadmap's phase order is
+**Next action: Phase 2a — it is the only remaining route.** Phase 0 passed, its
+companion probe is done, Phase 1's composition work already landed with
+`with_deltas()` (1a is verified above), and Phase 2b is closed negative on both
+ECAPA and WavLM. What is left is 2a, the direct `audio -> style_ttl` encoder on
+generated pairs. Two things bound it, and they pull in opposite directions.
+Nothing bounds it from the audio side: the perturbation is audible, and a
+prosody-bearing input does read more of it, so feed 2a WavLM-class features
+(layers 3-5, mean+std, which is also what `supertonic.embed` uses) rather than a
+speaker-verification embedding. But no probe of this class recovered the
+perturbation *direction* from either input, so the encoder is genuinely
+unproven, and **2b's instruction to evaluate it against the optimizer's
+converged style rather than against downstream audio matters more, not less** —
+after the synthesis above, even a well-chosen audio metric may agree between two
+styles that are far apart in style space, so audio quality cannot be the
+acceptance test. Axis work in Phases 3-4 should still be fitted inside the
+preset-spanned subspace where 2b found the conditioning is good. The ordering is
+in [new-plan.md](../new-plan.md), not in this one; this roadmap's phase order is
 superseded.
 
 ## Next Best Steps
