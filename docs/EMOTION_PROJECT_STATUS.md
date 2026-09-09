@@ -498,6 +498,41 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
+**Phase 2a result (2026-09-09): audio does carry the style perturbation, and
+no capacity ceiling is visible through a 64-dimensional subspace.** The 2b
+probe was rank-starved (n_train=240 against a 6,120-dim target, see
+correction above); the subspace ladder shrinks the target to K in
+{4, 16, 64} so `n_train` meets or exceeds it. Same engine, same WavLM
+features (layers 3-5, mean+std), same ridge estimator as 2b — only the
+target size changes. Results, at eps=0.20, fixed base preset M1:
+
+| K | n_train | oracle ceiling | achieved mean R² | shuffled | loudness |
+|---|---|---|---|---|---|
+| 4 | 240 | 1.0000 | 0.912 | −0.002 | 0.023 |
+| 16 | 240 | 1.0000 | 0.608 | −0.016 | −0.004 |
+| 64 | 480 | 1.0000 | 0.232 | −0.008 | −0.003 |
+
+The oracle ceiling of 1.0 at every K — checked out-of-sample, not assumed —
+is the diagnostic 2b's design lacked, and it confirms this design has the
+power to detect recovery. Recovery is real (shuffled and loudness controls
+sit at noise level) and uniform across components, not carried by a few. An
+amplitude-matched control (holding per-direction perturbation amplitude
+fixed instead of total energy) gives a nearly flat 0.297 / 0.199 / 0.232
+across K=4/16/64, against the fixed-energy 0.912/0.608/0.232 — most of the
+fixed-energy decline was per-direction signal-to-noise, not a hard ceiling
+on dimensionality. A separate n_train sweep (`py/phase2a_scaling.py`) finds
+K=64 still rising steeply at n_train=480 with no sign of saturation, so a
+larger corpus (~8,000 renders, sized for the full 6,144-dim target) is worth
+generating; that fit moves to a GPU/Colab session
+(`docs/phase2a_scaling_colab.ipynb`, in progress). Full tables, the
+amplitude-matched control, the scaling sweep, and the refinement-graph
+feasibility check (all four ONNX models convert under `onnx2torch`;
+gradients reach `style_ttl` on 12,800/12,800 elements) are in
+[new-plan.md](../new-plan.md) under Phase 2a. **Established: `style_ttl`
+perturbations are recoverable from audio up to at least a 64-dimensional
+subspace. Not established: any specific capacity number for the full
+12,800-dimensional tensor** — that is what the next, larger corpus is for.
+
 **Next action: Phase 2a — it is the only remaining route.** Phase 0 passed, its
 companion probe is done, Phase 1's composition work already landed with
 `with_deltas()` (1a is verified above), and Phase 2b's between-preset result
