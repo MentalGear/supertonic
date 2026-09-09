@@ -372,6 +372,27 @@ share of target variance), not about the within-family residual that is the
 closure's load-bearing claim. Full numbers and derivation are in
 [new-plan.md](../new-plan.md) under Phase 2b.
 
+**Stated the other way round, this recovery is worth something concrete for
+2a.** 0.432 calibrated ECAPA cosine, beating a no-audio baseline on 80/80
+held-out samples and a same-gender impostor on 95% (100% on M5), with a
+per-identity ordering (F4 0.483 / F5 0.449 / M5 0.374) that independently
+matches a listener's ranking, is real, consistent structure — evidence
+`audio -> style_ttl` is learnable at all, not only evidence of what it fails
+to recover. Its concrete role is as a **warm start for 2a's gradient
+refinement loop**, not as a solution: initializing the per-speaker descent
+from the probe's output should need far fewer steps than starting from a
+random point or the training mean, which is the whole currency Phase 2 is
+trying to buy. The limits stay attached — 0.432 is below the same-speaker
+floor (0.669-0.879), so it is a starting point and not an answer; the
+within-family residual is still ~0, so it contributes nothing to the
+fine-grained perturbation direction; and it is measured on engine-generated
+audio only, so transfer to real recorded voices is untested. It also
+sharpens the many-utterances lever already recorded above: if one utterance
+exposes ~5-10 usable dimensions and the limit is additive, a warm start
+averaged over several utterances of the same speaker should beat a
+single-utterance one — worth trying early in 2a. Full derivation in
+new-plan.md under Phase 2b.
+
 Caveats: one base, one sentence, so the dimensionality figures are
 per-(base, sentence); at eps 0.20 the emphasis profile sits near the
 vocoder-nuisance floor and is weakly identifiable, but the log-mel diff map is
@@ -440,7 +461,14 @@ generated pairs. Two things bound it, and they pull in opposite directions.
 Nothing bounds it from the audio side: the perturbation is audible, and a
 prosody-bearing input does read more of it, so feed 2a WavLM-class features
 (layers 3-5, mean+std, which is also what `supertonic.embed` uses) rather than a
-speaker-verification embedding. But no probe of this class recovered the
+speaker-verification embedding. Use the 2b probe itself as a **warm start**
+for 2a's refinement loop rather than training from scratch: it lands at 0.432
+calibrated ECAPA speaker similarity, beats a no-audio baseline on 80/80
+held-out samples, and beats a same-gender impostor on 95% — well short of
+true identity but a consistently better starting point than a random or
+mean init, which is what a gradient-refinement loop needs from its init to
+converge in fewer steps (see "Stated the other way round" above). But no
+probe of this class recovered the
 perturbation *direction* from either input, so the encoder is genuinely
 unproven, and **2b's instruction to evaluate it against the optimizer's
 converged style rather than against downstream audio matters more, not less —

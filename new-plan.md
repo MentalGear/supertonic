@@ -347,6 +347,17 @@ Because the init is already near-optimal these should take seconds rather than
 minutes, giving a quality dial between "instant" and "optimizer-exact" instead
 of one fixed operating point.
 
+**Warm-start note (added after 2b's speaker-similarity correction below):**
+the WavLM linear probe from 2b, despite failing on the perturbation direction,
+lands at 0.432 calibrated ECAPA speaker-similarity against true style —
+consistently ahead of a train-mean or random start (80/80 held-out samples).
+That is exactly what a refinement loop's starting point needs to be good,
+even though it is not good enough to be the answer on its own — use the 2b
+probe (or a lightweight WavLM-features-in encoder trained the same way) as
+2a's init before running the gradient steps below, and see the "What the
+recovered signal is worth" note under the 2b correction for the numbers and
+its limits.
+
 Evaluate the encoder against **the optimizer's own converged style**, not only
 against downstream audio quality. Audio metrics masked systematic encoder bias
 in the early image-inversion work, and the same failure is available here. The
@@ -885,6 +896,46 @@ between-base-preset (the within-family residual control below), and this
 measurement is squarely inside that slice. The within-family residual
 itself — the perturbation with base voice subtracted, the load-bearing claim
 for the closure — was not retested here and remains at R^2 ~0.
+
+**What the recovered signal is worth, stated positively.** The framing above
+is deliberately about what WavLM's gain is *not* — read alone it can sound
+like the probe recovers nothing usable. It recovers something real: a
+consistent, ordered voice-identity signal, not just a mean shift. WavLM beats
+the train-mean baseline on **80/80** held-out samples (mean margin +0.19
+ECAPA cosine) and a same-gender wrong-speaker impostor on **95%** (100% on
+M5, margin +0.22), and its per-identity means — F4 0.483, F5 0.449, M5
+0.374 — independently match a listener's ranking of the same three
+reconstructions. That has a concrete use in 2a: **as a warm start for the
+refinement loop, not as a replacement for it.** 2a is written as a direct
+encoder *plus* gradient refinement — the GAN-inversion hybrid pattern above,
+run a handful of steps through the frozen graph from the encoder's output —
+and the entire point of Phase 2 is amortizing away the per-speaker optimizer
+run that costs minutes of GPU time per speaker today (Phase 2's framing
+above; a comparable single-speaker run takes 15-30 minutes on a T4 per
+`docs/EMOTION_CALIBRATION.md`). A predictor that lands at 0.432 calibrated
+ECAPA cosine — roughly double the different-speaker anchor (0.225) — and
+beats a no-audio baseline on every held-out sample is a materially better
+place to start that descent than a random init or the training mean: fewer
+steps to converge from a warm start is exactly the currency 2a is trying to
+buy. It is also evidence, independent of the negative result below, that
+`audio -> style_ttl` has learnable structure at all — the failure is in how
+much a linear probe recovers from one utterance, not that the mapping is
+unlearnable.
+
+Keep the limit attached to it, so it is not over-read. 0.432 sits below the
+same-speaker floor (0.669), so this is a starting point, not an answer. The
+within-family residual — the axis the perturbation itself lives on, and the
+closure's load-bearing claim — is still ~0, so this recovery contributes
+nothing to the fine-grained perturbation direction; it is confined to the
+between-preset slice of the target. And every clip measured here is
+engine-generated audio from engine-generated styles, so whether a warm start
+this good transfers to real recorded voices is untested. It connects to the
+many-utterances lever recorded below on the encoder side too: if one
+utterance yields roughly 5-10 usable dimensions and the limit is additive
+across utterances, a warm start built by averaging (or jointly fitting) a
+predictor over several utterances of the same speaker should beat a
+single-utterance warm start — a cheap, concrete thing for 2a to try early,
+before or alongside the refinement loop.
 
 **Verdict: the optimistic branch is dead and the middle branch with it — the
 kernel probe was worse on unseen voices for both inputs, with real control-task
