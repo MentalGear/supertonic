@@ -695,31 +695,140 @@ does not reopen the phase.
   texts, which is nuisance. The std term *is* the frame-level probe, and it buys
   about 0.01.
 
-**The synthesis: audible does not mean identifiable.** The correction above
-established that random `style_ttl` perturbations are plainly audible — they
-move the log-mel spectrogram, lift utterance level by up to +4.9 dB, and
-redistribute per-word emphasis over 10 dB — and that ECAPA's apparent
-"inaudibility" was an artifact of using a prosody-invariant embedding as an
-audibility meter. It named a prosody-bearing input as the thing to test "before
-concluding the inverse is ill-posed." That test has now been run, and WavLM —
-which does carry prosody, where ECAPA is trained not to — is twice as good at
-the full target and still returns *exactly zero* on the within-family residual.
-The two results say together what neither says alone: a 6,120-dimensional
-perturbation collapses onto a low-dimensional audible readout — roughly an
-utterance level plus a per-word emphasis pattern, on the order of ten numbers
-for this sentence. A listener plainly hears that something changed; the map from
-that audible consequence back to the direction that caused it is many-to-one,
-and therefore not invertible by a probe of this class. **So the inverse is
-ill-posed after all — but for a quite different reason than the original wrong
-claim.** Not "the audio does not contain the change", which was false and stays
-false, but "many different high-dimensional directions produce nearly the same
-low-dimensional audible consequence."
+**The synthesis (2026-09-09): audible does not mean identifiable — later
+refuted, kept here because the correction only makes sense against it.** The
+correction above established that random `style_ttl` perturbations are plainly
+audible — they move the log-mel spectrogram, lift utterance level by up to
++4.9 dB, and redistribute per-word emphasis over 10 dB — and that ECAPA's
+apparent "inaudibility" was an artifact of using a prosody-invariant embedding
+as an audibility meter. It named a prosody-bearing input as the thing to test
+"before concluding the inverse is ill-posed." That test had just been run, and
+WavLM — which does carry prosody, where ECAPA is trained not to — was twice as
+good at the full target and still returned *exactly zero* on the
+within-family residual. Read together, the two results were taken to say that
+a 6,120-dimensional perturbation collapses onto a low-dimensional audible
+readout — roughly an utterance level plus a per-word emphasis pattern, on the
+order of ten numbers for this sentence — so the map from that audible
+consequence back to the direction that caused it is many-to-one, and not
+invertible by a probe of this class: not "the audio does not contain the
+change," but "many different high-dimensional directions produce nearly the
+same low-dimensional audible consequence."
 
-Held at the right strength: this is the reading that reconciles both
-measurements, not a separately proven fact. The dimensional-collapse account is
-inference from them. The direct test would be to check whether distinct random
+**This was flagged at the time as inference, not a third measurement, and the
+direct test was named and left explicitly unrun:** whether distinct random
 directions at matched magnitude produce *similar* audible readouts — energy
-contour and per-word emphasis — from the same base. That has not been done.
+contour and per-word emphasis — from the same base. It has now been run, and
+it refutes the synthesis above.
+
+**Correction to the synthesis (2026-09-09): the collapse account is refuted;
+the null survives for a different reason.** `py/phase2b_direction_collapse.py`
+renders K=24 independent random directions from base M1 — mutually
+near-orthogonal in style space, mean cosine -0.0006, max |0.040| — at the two
+magnitudes already characterized above (eps 0.20 / 0.80, per-row angle
+11.28 / 38.52 degrees), one sentence, `style_dp` pinned at M1's, seeded
+rendering (row-norm deviation 2.4e-07, all clips frame-aligned at 136,696
+samples), and asks the question the paragraph above named and left open: do
+distinct directions produce *similar* audible readouts, or distinguishable
+ones?
+
+They are distinguishable, sharply and reproducibly:
+
+- **Pairwise similarity between directions is low, and mostly inside the null
+  band.** Per-word emphasis Pearson r across the 276 direction pairs: mean
+  +0.158 / median +0.161 at eps 0.20, falling to +0.060 / +0.091 at eps 0.80 —
+  against a null band, for two unrelated 9-word profiles, of r = 0 +/- 0.354,
+  which **55% of all pairs fall inside**. Log-mel diff-map cosine: +0.331 /
+  +0.404. Shared fraction, on a scale where 1.0 is identical and 1/24 = 0.042
+  is unrelated: emphasis 0.205 / 0.090, log-mel diff map 0.380 / 0.437. Two
+  directions typically move the log-mel spectrogram *from each other*
+  (5.52 / 10.44 dB rms) by more than either moves it from the base
+  (4.80 / 9.56 dB).
+- **Direction identity survives an independent nuisance draw.** Each direction
+  was re-rendered under a second vocoder latent (seed 5151) and matched 1-NN
+  against its own latent's base, across all 24 directions (chance
+  1/24 = 4.2%). The log-mel diff map picks the right direction 70.8% of the
+  time at eps 0.20 (17/24, p = 9.0e-19) and 66.7% at eps 0.80 (16/24,
+  p = 4.4e-17). The per-word emphasis profile does the same at eps 0.80
+  (45.8%, p = 9.9e-10) but is weak at eps 0.20 (16.7%, p = 1.6e-02) — at that
+  magnitude the 9-number profile sits near the vocoder-nuisance floor
+  (same-direction cross-latent r only 0.386). The energy contour, consistent
+  with being the *shared* part of the readout (below), does not identify
+  direction at all (16.7% / 12.5%, the latter not significant).
+
+**Specifically refuted:** "many different high-dimensional directions produce
+nearly the same low-dimensional audible consequence," and the forward-looking
+claim it licensed — that well-chosen audio metrics might agree between two
+styles that are far apart in style space. Measured from a common base at
+eps 0.20-0.80, well-chosen audio metrics **disagree**, sharply and
+reproducibly, between distinct directions.
+
+**The Phase 2b null survives — but the reason changes.** The readout is
+genuinely low-dimensional: participation ratio 3.7 of 9 possible dimensions
+for the emphasis profile, 4.6-7.0 of 23 for the log-mel diff map, measured the
+same way across all 24 directions. Perfectly inverting a ~5-7 dimensional
+readout recovers at most ~7/6,120 = 0.1% of a 6,120-dimensional target —
+nowhere near enough to determine a direction by itself. The corrected
+statement: **the inverse is narrow, not many-to-one.** Per utterance and per
+base, the audio exposes on the order of 5-10 direction-specific dimensions out
+of 6,120, and — this is what changed from the refuted account — they are
+cleanly direction-specific rather than collapsed onto a readout shared enough
+to erase which direction produced it.
+
+**The grain of truth that survives from the refuted account.** The energy
+contour genuinely is the shared part: pairwise r reaches +0.50 at eps 0.80,
+and it is the one readout that fails cross-latent identification outright.
+It is the per-word emphasis pattern and the spectral detail (the log-mel diff
+map) that are direction-specific. "Utterance level plus a per-word emphasis
+pattern" was the right list of readouts to name; "the same for every
+direction" was the wrong claim to make about them.
+
+**An admission, stated plainly because it changes how much weight the earlier
+record deserves.** The within-family residual control (R^2 +0.0000 to
++0.0014 for both ECAPA and WavLM), cited above as the decisive evidence for
+collapse, is exactly what *both* accounts predict — a genuinely low-dimensional
+readout is just as invisible to a full-rank linear probe as a genuinely
+collapsed one would be. **It never had the power to distinguish collapse from
+narrow-but-real recoverability, so it cannot be cited as evidence for
+collapse — nor is it evidence against recoverability.** Every other control in
+this section stands; this one specific citation does not carry the weight it
+was given.
+
+**The materially different instruction for Phase 2a.** The limit measured
+here is dimensional and **additive across utterances**, not a property of the
+audio representation — a second sentence exposes a different 5-10 dimensions,
+not a better view of the same ones. **The lever for an encoder is many
+utterances per style, not a better single-utterance representation.** This
+differs from what stood here before, which implied representation quality was
+the binding constraint: feeding a richer per-utterance feature does not relax
+a limit set by how many independent readouts exist, not by how well any one of
+them is measured.
+
+**Caveats.** One base and one sentence, so the dimensionality figures (3.7 /
+4.6-7.0) are per-(base, sentence) — a different base or a longer sentence
+could sit at a different point. At eps 0.20 the emphasis profile sits near the
+vocoder-nuisance floor, so identification there is weak by construction; the
+log-mel diff map is the strong instrument and is unambiguous at both
+magnitudes.
+
+**Also measured: what the probes actually reconstructed.**
+`py/phase2b_wavlm_render.py` (report `probe_recovery_triples.json`) refit both
+probes family-disjoint on the identical indices used above — reproducing the
+record exactly, ECAPA R^2 +0.0672 and WavLM L3 +0.1421 at eps 0.20 — and added
+a third, deciding arm: a constant train-mean predictor that reads no audio at
+all. Active-row cosine to the true style and level-matched log-mel distance:
+idx1200 (F5) ECAPA 0.8747 / 15.88 dB, WavLM 0.9000 / 15.68, train-mean
+0.8731 / 19.19; idx1201 (F5) ECAPA 0.8842 / 18.58, WavLM 0.9012 / 14.08,
+train-mean 0.8730 / 19.71; idx1202 (M5) ECAPA 0.9021 / 21.47, WavLM
+0.9012 / 19.01, train-mean 0.8871 / 22.32.
+
+For scale, a full M1->F1 identity swap is 16.6 dB rms log-mel. **Both probes'
+predictions sit 14-21 dB from the true style — as far as, or further than, a
+different speaker.** WavLM's mean gain over ECAPA is +0.017 cosine, and the
+train-mean baseline — zero audio read — trails WavLM by only 0.017-0.028
+cosine. The probe's R^2 is real and not noise (the control task already
+established that), but what it buys over reading no audio at all is small
+next to the gap that remains — consistent with, not in tension with, the
+narrow-inverse reading above.
 
 **Verdict: the optimistic branch is dead and the middle branch with it — the
 kernel probe was worse on unseen voices for both inputs, with real control-task
@@ -730,29 +839,40 @@ in — ECAPA, then WavLM at roughly twice the R^2 with clean selectivity and
 still exactly zero on the perturbation — so Phase 2b is closed.**
 
 Two consequences worth carrying forward, one each way. It shapes 2a, and more
-sharply now that both inputs are in. There is no information ceiling in the
-audio — the change is audible, and a prosody-bearing input does read more of it,
-so feed 2a WavLM-class features (layer 3-5, mean+std) rather than a
-speaker-verification embedding. But the perturbation *direction* was not
-recoverable by any probe of this class from either input, so what remains
-unbounded by 2b is the encoder, not the inverse problem as a whole: 2a is worth
-running, and its evaluation against the optimizer's converged style rather than
-against downstream audio matters *more* after this, not less. Audio metrics
-chosen as badly as delta-ECAPA was would report the same false negative — and,
-after the synthesis above, even well-chosen audio metrics may agree between two
-styles that are far apart in style space. And it helps Phases 3 and 4: *within*
-the preset-spanned subspace, embedding distance does track style distance (Spearman
-0.41, against 0.00 for random directions at every magnitude), so deriving axes
-there is far better conditioned than the 6,144-parameter framing suggests.
+sharply now that both inputs are in, the direction-collapse test is run, and
+the probe-reconstruction check is run alongside it. There is no information
+ceiling in the audio — the change is audible, and a prosody-bearing input does
+read more of it, so feed 2a WavLM-class features (layer 3-5, mean+std) rather
+than a speaker-verification embedding. But the perturbation *direction* was
+not recoverable by any linear probe of this class from either input, so what
+remains unbounded by 2b is the encoder, not the inverse problem as a whole: 2a
+is worth running, and its evaluation against the optimizer's converged style
+rather than against downstream audio matters *more* after this, not less —
+now for a corrected reason. It is not, as first thought, that well-chosen
+audio metrics might falsely agree between two styles that are far apart in
+style space; the direction-collapse test above refutes that directly —
+distinct directions disagree in the audio, sharply. It is that the audio
+readout is narrow, on the order of 5-10 dimensions out of 6,120 per utterance,
+so an encoder can match the audio closely — exactly what the probe-
+reconstruction check shows, both probes landing 14-21 dB from the true style
+in log-mel despite genuine R^2 — while leaving most of the target
+unconstrained. Style-space evaluation catches that; audio proximity alone does
+not. **And the many-utterances lever applies to 2a's training objective as
+much as it does to 2b's readout: the limit is additive across utterances, so a
+single-utterance encoder objective is the wrong unit to optimize — train and
+evaluate 2a against multiple renders per style, not one.** It also helps
+Phases 3 and 4: *within* the preset-spanned subspace, embedding distance does
+track style distance (Spearman 0.41, against 0.00 for random directions at
+every magnitude), so deriving axes there is far better conditioned than the
+6,144-parameter framing suggests.
 
 Still open:
 
-- **Whether the collapse account is right.** The synthesis above is inference
-  from two measurements, not a third measurement. The direct test is to render
-  distinct random directions at matched magnitude from one base and ask whether
-  their audible readouts — utterance level, energy contour, per-word emphasis —
-  are near-identical. If they are, the many-to-one story is confirmed, and that
-  low-dimensional readout is the thing an axis should be defined over. Not run.
+- ~~Whether the collapse account is right.~~ **Resolved (2026-09-09): no.**
+  See "Correction to the synthesis" above — `phase2b_direction_collapse.py` ran
+  the direct test this bullet named and refutes the collapse account; the
+  Phase 2b null survives, but for the narrow-inverse reason recorded there,
+  not the many-to-one one.
 - **Where the sampled styles live.** Every style here was engine-generated from
   a base preset, so the sampled set may not reach where real speakers do. That
   bounds the answer rather than closing it — and closing it needs

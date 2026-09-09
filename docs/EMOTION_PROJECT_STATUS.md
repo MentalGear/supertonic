@@ -298,30 +298,67 @@ is on "which base voice was this" and none of it is on the perturbation** —
 78.8% of eps 0.20's target variance is between-base-preset, the probe recovers
 a slice of that and none of the remaining 21.2%.
 
-**The synthesis, and the settled reading of the phase: audible does not mean
-identifiable.** The correction above says random `style_ttl` perturbations are
-plainly audible and that ECAPA's apparent "inaudibility" was an artifact of
-using a prosody-invariant embedding as an audibility meter; it named a
-prosody-bearing input as the thing to test before concluding the inverse is
-ill-posed. WavLM is that input, and it returns exactly zero on the residual. Put
-together: a 6,120-dimensional perturbation collapses onto a low-dimensional
+**The synthesis first recorded here — "audible does not mean identifiable" —
+has since been refuted by the direct test it named as unrun.** What stood at
+this point read the two results above (audible, but WavLM still zero on the
+residual) as: a 6,120-dimensional perturbation collapses onto a low-dimensional
 audible readout — roughly an utterance level plus a per-word emphasis pattern,
-on the order of ten numbers for this sentence. A listener plainly hears that
-something changed; the map from that audible consequence back to the direction
-that caused it is many-to-one, and therefore not invertible by a probe of this
-class. **So the inverse is ill-posed after all — but for a quite different
-reason than the original wrong claim.** Not "the audio does not contain the
-change", which was false and stays false, but "many different high-dimensional
-directions produce nearly the same low-dimensional audible consequence." Held at
-the right strength: this is the reading that reconciles both measurements, not a
-separately proven fact — the dimensional-collapse account is inference from
-them. The direct test, not run, is whether distinct random directions at matched
-magnitude produce similar audible readouts (energy contour, per-word emphasis)
-from the same base.
+on the order of ten numbers for this sentence — so many different directions
+produce nearly the same audible consequence, and the audio-to-style inverse is
+many-to-one for that reason. It was flagged at the time as inference, with the
+direct test named and explicitly not run: whether distinct random directions at
+matched magnitude produce *similar* audible readouts from the same base.
 
-Scope on the WavLM half is the scope above: the same synthetic audio, the same
-engine-generated styles from base presets, the same three held-out identities.
-Full numbers are in [new-plan.md](../new-plan.md) under Phase 2.
+**That test has now been run (`py/phase2b_direction_collapse.py`,
+2026-09-09) and refutes it.** K=24 mutually near-orthogonal random directions
+from base M1, at the same eps 0.20/0.80 magnitudes, are *distinguishable*, not
+collapsed: pairwise per-word-emphasis correlation between directions is
+weak (mean r +0.158 / +0.060, and 55% of all pairs fall inside the null band
+for unrelated 9-word profiles), two directions typically differ from each
+other in log-mel spectrogram *more* than either differs from the base
+(5.5-10.4 dB between-direction vs. 4.8-9.6 dB from-base), and direction
+identity survives an independent vocoder-latent redraw: 1-NN against the
+other 23 directions picks the true one 70.8% (eps 0.20) / 66.7% (eps 0.80) of
+the time on the log-mel diff map (chance 4.2%, p < 1e-16 both). **Specifically
+refuted:** "many different directions produce nearly the same audible
+consequence," and the claim it licensed that well-chosen audio metrics might
+agree between far-apart styles — measured directly, they disagree, sharply.
+
+**The Phase 2b null survives, for a different reason: the inverse is narrow,
+not many-to-one.** The audible readout genuinely is low-dimensional
+(participation ratio 3.7 of 9 for emphasis, 4.6-7.0 of 23 for the log-mel diff
+map), so perfectly inverting it recovers at most ~7/6,120 = 0.1% of the
+6,120-dimensional target — but those few dimensions are cleanly
+direction-specific rather than shared across directions. The energy contour is
+the one readout that genuinely is shared (pairwise r up to +0.50, and it fails
+cross-latent identification); the emphasis pattern and spectral detail are not.
+**Admission carried forward:** the within-family residual control
+(R^2 +0.0000 to +0.0014, cited above as decisive) is exactly what *both* the
+collapse account and the narrow-inverse account predict, so it never had the
+power to distinguish them — it is not evidence for collapse, nor against
+recoverability.
+
+**The instruction for Phase 2a changes as a result.** The limit is dimensional
+and *additive across utterances*, not a property of the audio representation —
+a different sentence exposes a different 5-10 dimensions, not a better view of
+the same ones. **The lever for an encoder is many utterances per style, not a
+better single-utterance representation.** A companion check
+(`py/phase2b_wavlm_render.py`, `probe_recovery_triples.json`) reinforces this
+from the other side: refitting both probes and adding a constant train-mean
+baseline, both probes' rendered predictions sit 14-21 dB (log-mel) from the
+true style — as far as, or further than, a full identity swap (16.6 dB) — and
+the train-mean baseline (zero audio read) trails WavLM by only 0.017-0.028
+cosine. The probe's R^2 is real (not noise), but it buys little over reading no
+audio at all.
+
+Caveats: one base, one sentence, so the dimensionality figures are
+per-(base, sentence); at eps 0.20 the emphasis profile sits near the
+vocoder-nuisance floor and is weakly identifiable, but the log-mel diff map is
+unambiguous at both magnitudes. Scope on the WavLM half is the scope above: the
+same synthetic audio, the same engine-generated styles from base presets, the
+same three held-out identities. Full numbers, including the direction-collapse
+and probe-reconstruction detail, are in [new-plan.md](../new-plan.md) under
+Phase 2.
 
 **What this means for emotion.** `style_ttl` demonstrably has prosodic reach:
 random directions produce monotone, magnitude-scaled changes in utterance level
@@ -385,13 +422,22 @@ prosody-bearing input does read more of it, so feed 2a WavLM-class features
 speaker-verification embedding. But no probe of this class recovered the
 perturbation *direction* from either input, so the encoder is genuinely
 unproven, and **2b's instruction to evaluate it against the optimizer's
-converged style rather than against downstream audio matters more, not less** —
-after the synthesis above, even a well-chosen audio metric may agree between two
-styles that are far apart in style space, so audio quality cannot be the
-acceptance test. Axis work in Phases 3-4 should still be fitted inside the
-preset-spanned subspace where 2b found the conditioning is good. The ordering is
-in [new-plan.md](../new-plan.md), not in this one; this roadmap's phase order is
-superseded.
+converged style rather than against downstream audio matters more, not less —
+now for a corrected reason.** It is not, as first thought, that a well-chosen
+audio metric might falsely agree between two styles that are far apart in
+style space — the direction-collapse test above refutes that; distinct
+directions disagree in the audio, sharply. It is that the audio readout is
+narrow (on the order of 5-10 dimensions out of 6,120 per utterance), so an
+encoder can match the audio closely — as the probe-reconstruction check shows
+directly, both probes landing 14-21 dB from the true style despite genuine
+R^2 — while leaving most of the target unconstrained. Style-space evaluation
+catches that; audio proximity alone does not. **And because the limit is
+additive across utterances, not representational, train and evaluate 2a
+against many renders per style, not a single-utterance objective — that is the
+lever, not a better per-utterance feature.** Axis work in Phases 3-4 should
+still be fitted inside the preset-spanned subspace where 2b found the
+conditioning is good. The ordering is in [new-plan.md](../new-plan.md), not in
+this one; this roadmap's phase order is superseded.
 
 ## Next Best Steps
 
