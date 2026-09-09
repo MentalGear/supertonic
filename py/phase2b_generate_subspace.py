@@ -23,6 +23,8 @@ B[:4] subset B[:16] subset B[:64] exactly, not just approximately.
 
 Usage (from py/):
     python3 phase2b_generate_subspace.py [--smoke] [--k 16]
+    python3 phase2b_generate_subspace.py --k 4 --eps 0.05 \
+        --out-dir results/phase2b_subspace_matched  # matched-amplitude control
 """
 
 import argparse
@@ -121,10 +123,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true", help="4 samples per K, no audio written")
     ap.add_argument("--k", type=int, default=None, choices=K_LIST, help="run a single K")
+    ap.add_argument("--eps", type=float, default=EPS,
+                     help="total perturbation energy target (default: %(default)s, matches phase2b)")
+    ap.add_argument("--out-dir", default=OUT_DIR,
+                     help="output root; audio16k/, subspace.npz, manifest.json go under here "
+                          "(default: %(default)s)")
     args = ap.parse_args()
 
+    eps = args.eps
+    out_dir = args.out_dir
+    audio_dir = os.path.join(out_dir, "audio16k")
+
     k_list = [args.k] if args.k is not None else K_LIST
-    os.makedirs(AUDIO_DIR, exist_ok=True)
+    os.makedirs(audio_dir, exist_ok=True)
 
     base_style = load_voice_style([os.path.join(VOICE_STYLE_DIR, f"{BASE_PRESET}.json")])
     base_ttl = base_style.ttl.astype(np.float32)  # (1, 50, 256)
@@ -161,7 +172,7 @@ def main():
         with timer(f"K={K} ({n_k} samples)"):
             for local_idx in range(n_k):
                 rows, c_drawn, c_realized, in_subspace_fraction = sample_style(
-                    sample_rng, B, P, K, EPS
+                    sample_rng, B, P, K, eps
                 )
 
                 ttl = base_ttl.copy()
@@ -183,7 +194,7 @@ def main():
                 fname = f"K{K}_{local_idx:05d}.wav"
                 if not args.smoke:
                     w16 = resample_poly(trimmed, EMBED_SR, tts.sample_rate).astype(np.float32)
-                    sf.write(os.path.join(AUDIO_DIR, fname), w16, EMBED_SR, subtype="PCM_16")
+                    sf.write(os.path.join(audio_dir, fname), w16, EMBED_SR, subtype="PCM_16")
 
                 manifest_records.append({
                     "K": K, "idx": local_idx, "file": fname,
@@ -208,7 +219,7 @@ def main():
         npz_payload[f"c_realized_K{K}"] = c_realized_all
         npz_payload[f"ttl_K{K}"] = ttl_all
 
-    np.savez_compressed(os.path.join(OUT_DIR, "subspace.npz"), **npz_payload)
+    np.savez_compressed(os.path.join(out_dir, "subspace.npz"), **npz_payload)
 
     fractions = [r["in_subspace_fraction"] for r in manifest_records]
     meta = {
@@ -218,7 +229,7 @@ def main():
         "k_list": k_list,
         "n_per_k": {str(K): (4 if args.smoke else N_PER_K[K]) for K in k_list},
         "n_total": len(manifest_records),
-        "eps": EPS,
+        "eps": eps,
         "active_rows": ACTIVE_ROWS,
         "texts": TEXTS,
         "lang": LANG, "total_step": TOTAL_STEP, "speed": SPEED,
@@ -233,9 +244,9 @@ def main():
         "in_subspace_fraction_min": float(np.min(fractions)) if fractions else None,
         "records": manifest_records,
     }
-    with open(os.path.join(OUT_DIR, "manifest.json"), "w") as f:
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(meta, f, indent=2)
-    print(f"\nWrote {len(manifest_records)} samples -> {OUT_DIR}")
+    print(f"\nWrote {len(manifest_records)} samples -> {out_dir}")
     bad = [r for r in manifest_records if not r["finite"] or r["peak"] >= 1.0]
     print(f"non-finite or clipped clips: {len(bad)}")
 
