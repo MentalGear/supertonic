@@ -41,6 +41,16 @@ inline burns the context the main loop needs for judgment.
   frozen. `style_ttl [1, 50, 256]` and `style_dp [1, 8, 16]` are all there is
   to control. Any "make the engine do X" idea has to reduce to producing those
   two tensors.
+  Where each one enters matters, and is not what the names suggest. `style_dp`
+  (128 numbers) is read by `duration_predictor` alone — it sets how long each
+  text unit lasts, and so the temporal skeleton, and nothing else. `style_ttl`
+  (12,800 numbers) is read twice: by `text_encoder`, producing a `text_emb`
+  with a per-text-position axis, and again by `vector_estimator` at every
+  denoising step. So it is not a global timbre vector, despite upstream docs
+  glossing it as "timbre" — conditioning the text embedding gives it
+  per-position reach, which is why perturbing it can change which words are
+  emphasized while durations stay pinned. Treat "style_ttl is timbre" as a
+  label that under-describes what it controls.
 - **Style blending lives in `py/helper.py` (`Style`) and `web/helper.js`.**
   Changes to blending semantics must land in both — the browser path is not
   generated from the Python one, and the two silently diverged once already
@@ -88,4 +98,18 @@ inline burns the context the main loop needs for judgment.
   the page is for judging, the files are for keeping. Reuse the established
   visual system across benches (IBM Plex Sans/Mono with Newsreader, teal accent
   on cool neutrals) so successive sets read as one series.
+- **Compare spectrograms before you compare aggregates.** A scalar summary —
+  median F0, mean spectral flatness, voiced fraction, WER — collapses both time
+  and frequency, so a change that is localized in time (per-word emphasis) or
+  that moves in opposite directions across the utterance averages to nothing. A
+  flat aggregate is not evidence that nothing changed; it is evidence that
+  nothing changed *in that projection*. This is not hypothetical: an
+  utterance-level battery reported a perturbation ladder as acoustically flat,
+  and a listener immediately heard the emphasis moving.
+  So: diff the log-mel spectrograms first and look at the picture, then reach
+  for aggregates to scale the finding across a sweep. Two conditions make the
+  diff meaningful — hold text and `style_dp` fixed so durations are pinned, and
+  seed the vocoder RNG, or the difference is mostly sampling noise. Without
+  alignment (different durations or an unseeded render) a raw 2D diff is
+  meaningless; align first or compare distributions instead.
 - Active research direction: [new-plan.md](new-plan.md).
