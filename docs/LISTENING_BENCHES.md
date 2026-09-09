@@ -123,3 +123,35 @@ exist locally.
   the tensor we constructed and rendered from, not a recorded human, and the
   held-out identities are shipped presets withheld from probe training, not
   held-out people.
+
+## 6. Phase 2a — Capacity
+
+- **Artifact:** https://claude.ai/code/artifact/624b138d-b490-40ea-9a07-90f5776517ed
+- **Contains:** what Phase 2a's R&sup2; ladder (0.912 / 0.608 / 0.232 at
+  K=4/16/64, eps=0.20) sounds like: for each K, the best/typical/worst
+  test-split sample by per-sample R&sup2;, each rendered as a level-matched,
+  seed-matched triple — true style, probe prediction (base + predicted c @
+  B[:K], `unit_rows`), and the unperturbed base preset as the "recovered
+  nothing" control. Also the achieved-R&sup2;/oracle-ceiling/shuffled-control/
+  loudness-control table per K, and the amplitude-matched control result
+  (K=4/eps0.05 R&sup2;=0.297, K=16/eps0.10 R&sup2;=0.199, K=64/eps0.20
+  R&sup2;=0.232) showing the K-decline is largely a per-direction-amplitude
+  effect rather than a hard dimensional ceiling.
+- **Generator:** `py/benches/phase2a_capacity_bench.py` — unlike most other
+  generators here, this one also re-fits the ridge probe and renders the
+  audio itself (reusing `phase2b_subspace_probe.build_xy` /
+  `phase2b_probe.fit_ridge`, byte-identical to the reported R&sup2;), rather
+  than only building HTML from an already-rendered listening set.
+- **Inputs:** `py/results/phase2b_subspace/` (manifest, subspace basis,
+  WavLM features) and `py/results/phase2a/subspace_probe*.json` (the R&sup2;
+  reports), all produced by `phase2b_generate_subspace.py` +
+  `phase2b_subspace_embed.py` + `phase2b_subspace_probe.py`. Outputs land in
+  `py/results/listening_sets/phase2a_capacity/` (27 WAVs + manifest.json).
+- **Verdict:** pending — awaiting a listener's judgment on where along the
+  K=4/16/64 ladder the prediction stops being audibly distinguishable from
+  the no-perturbation control. Note: an active-row style cosine was computed
+  for every clip but deliberately left out of the page — it came back
+  nearly flat (0.98–0.99) across the whole R&sup2; range, which is exactly
+  what bench 5 already found calibrating that same metric (it does not
+  separate same-/different-speaker pairs), so surfacing it here would have
+  presented an uncalibrated number next to the calibrated one under test.
