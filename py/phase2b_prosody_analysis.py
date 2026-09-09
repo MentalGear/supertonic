@@ -97,13 +97,20 @@ def f0_cents(w):
     return c
 
 
-def segment_words(g, mask):
-    """Energy-based segmentation of the fixed sentence into word-ish units.
+def segment_words(g, mask, base=None):
+    """Word units for the fixed sentence, as frame index pairs.
 
-    Contiguous runs of frames above (peak - 30 dB), gaps shorter than 48 ms
-    bridged, runs shorter than 64 ms dropped. Boundaries are computed once on a
-    base clip and reused for every clip sharing that base.
+    Prefers the forced word boundaries written by `phase2b_prosody_mel.py`
+    (faster-whisper word timestamps, repaired) -- energy thresholding cannot
+    split this sentence into nine words because it is spoken without pauses,
+    and silently returns two units instead. The energy fallback below is kept
+    only so this script runs before the mel one has.
     """
+    mp = os.path.join(OUT_DIR, "mel_report.json")
+    if base and os.path.exists(mp):
+        wb = json.load(open(mp)).get("word_bounds_s", {}).get(base)
+        if wb:
+            return [(int(round(s * SR / HOP)), int(round(e * SR / HOP))) for _, s, e in wb]
     on = (g > g.max() - 30.0) & mask
     idx = np.flatnonzero(on)
     if idx.size == 0:
@@ -384,7 +391,7 @@ def main():
           f"{report['alignment_max_abs_lag_ms']:.1f} ms", flush=True)
 
     # ---- 1. word segmentation, computed once per base ----------------------
-    segs = {b: segment_words(baseclip[b].g, baseclip[b].mask) for b in ("M1", "F1")}
+    segs = {b: segment_words(baseclip[b].g, baseclip[b].mask, b) for b in ("M1", "F1")}
     report["segments"] = {b: [{"i": i, "start_s": s * HOP / SR, "end_s": e * HOP / SR,
                                "label": WORDS[i] if i < len(WORDS) else f"seg{i}"}
                               for i, (s, e) in enumerate(v)]
