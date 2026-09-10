@@ -58,6 +58,129 @@ LAYERS = [3, 4, 5]
 K_LIST = [4, 16, 64]
 RANKS = [("best", -1), ("typical", "median"), ("worst", 0)]
 
+# Persists per-triple verdicts to the artifact's `db` capability (declared by the publisher
+# as `capabilities: {db: {}}`) at `verdicts/<triple_id>` and the final section at
+# `verdicts/_overall`. Degrades to a read-only page (controls stay disabled, the #progress-line
+# says so) when db is unavailable. Never blocks first paint: all markup and CSS render before
+# this script's top-level await resolves.
+DB_SCRIPT = r"""(function () {
+  function $all(sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); }
+
+  var verdictEls = $all('.verdict');
+  var state = {};    // triple_id -> {field: value, ...}
+  var pending = {};  // triple_id -> {field: true, ...} not yet confirmed written
+  var timers = {};   // triple_id -> debounce handle
+  var db = null;
+
+  verdictEls.forEach(function (v) {
+    var tid = v.getAttribute('data-triple');
+    state[tid] = {};
+    pending[tid] = {};
+  });
+
+  function setTick(tid, field, mode) {
+    var el = document.querySelector('[data-tick][data-triple="' + tid + '"][data-field="' + field + '"]');
+    if (!el) return;
+    el.className = 'tick' + (mode ? ' ' + mode : '');
+    el.textContent = mode === 'saving' ? 'saving…' : mode === 'saved' ? 'saved ✓' : mode === 'err' ? 'not saved' : '';
+  }
+
+  function tripleMeta(tid) {
+    for (var i = 0; i < TRIPLES.length; i++) { if (TRIPLES[i].id === tid) return TRIPLES[i]; }
+    return null;
+  }
+
+  function save(tid) {
+    if (!db) return;
+    var fields = Object.keys(pending[tid]);
+    if (!fields.length) return;
+    pending[tid] = {};
+    var meta = tripleMeta(tid);
+    var body = Object.assign({}, state[tid], { updated_at: new Date().toISOString() });
+    if (meta) { body.k = meta.k; body.rank = meta.rank; body.sample_r2 = meta.sample_r2; }
+    db.doc('verdicts/' + tid).set(body).then(function () {
+      fields.forEach(function (f) { setTick(tid, f, 'saved'); });
+      updateProgress();
+    }).catch(function () {
+      // Quiet: mark the field unsaved rather than throwing.
+      fields.forEach(function (f) { setTick(tid, f, 'err'); });
+    });
+  }
+
+  function onFieldChange(tid, field, value) {
+    state[tid][field] = value;
+    pending[tid][field] = true;
+    setTick(tid, field, 'saving');
+    clearTimeout(timers[tid]);
+    timers[tid] = setTimeout(function () { save(tid); }, 600);
+  }
+
+  function wireVerdict(v) {
+    var tid = v.getAttribute('data-triple');
+    $all('.choices', v).forEach(function (group) {
+      var field = group.getAttribute('data-field');
+      $all('input[type=radio]', group).forEach(function (input) {
+        input.addEventListener('change', function () {
+          if (input.checked) onFieldChange(tid, field, input.value);
+        });
+      });
+    });
+    $all('textarea', v).forEach(function (ta) {
+      var field = ta.getAttribute('data-field');
+      ta.addEventListener('input', function () { onFieldChange(tid, field, ta.value); });
+    });
+  }
+  verdictEls.forEach(wireVerdict);
+
+  function updateProgress() {
+    var el = document.getElementById('progress-line');
+    if (!el) return;
+    if (!db) {
+      el.textContent = 'Responses cannot be saved in this view.';
+      el.className = 'progress nodb';
+      return;
+    }
+    var n = TRIPLES.filter(function (t) { return state[t.id] && state[t.id].q1; }).length;
+    el.textContent = n + ' of ' + TRIPLES.length + ' triples answered';
+    el.className = 'progress ready';
+  }
+
+  function enableInputs() {
+    $all('.verdict input, .verdict textarea').forEach(function (el) { el.disabled = false; });
+  }
+
+  function hydrate() {
+    var ids = TRIPLES.map(function (t) { return t.id; }).concat(['_overall']);
+    return Promise.all(ids.map(function (tid) {
+      return db.doc('verdicts/' + tid).get().then(function (snap) {
+        if (!snap.exists) return;
+        var data = snap.data() || {};
+        state[tid] = data;
+        var v = document.querySelector('.verdict[data-triple="' + tid + '"]');
+        if (!v) return;
+        Object.keys(data).forEach(function (field) {
+          if (field === 'updated_at' || field === 'k' || field === 'rank' || field === 'sample_r2') return;
+          var val = data[field];
+          if (val === undefined || val === null || val === '') return;
+          var radio = v.querySelector('.choices[data-field="' + field + '"] input[value="' + val + '"]');
+          if (radio) { radio.checked = true; setTick(tid, field, 'saved'); return; }
+          var ta = v.querySelector('textarea[data-field="' + field + '"]');
+          if (ta) { ta.value = val; setTick(tid, field, 'saved'); }
+        });
+      }).catch(function () { /* leave defaults on a read failure */ });
+    }));
+  }
+
+  (async function () {
+    var claude = window.claude;
+    db = (claude && typeof claude.use === 'function') ? await claude.use('db') : null;
+    if (!db) { updateProgress(); return; }
+    await hydrate();
+    enableInputs();
+    updateProgress();
+  })();
+})();"""
+
 
 def unit_rows(x):
     return x / np.linalg.norm(x, axis=-1, keepdims=True).clip(min=1e-8)
@@ -235,13 +358,55 @@ def build_html(k_summaries, triples_meta, matched_report, report):
         "best": "Best case", "typical": "Typical case", "worst": "Worst case",
     }
 
+    Q1_OPTS = [
+        ("matches_true", "Prediction matches true — they share something the control does not have"),
+        ("partway", "Prediction is partway between true and control"),
+        ("sounds_like_control", "Prediction sounds like the control — nothing recovered"),
+        ("cannot_tell", "Cannot tell — all three sound the same to me"),
+    ]
+    Q2_OPTS = [
+        ("glitch", "A glitch or artifact — something sounds broken: a spike, hiccup, warble, or click"),
+        ("character", "A change in voice character — timbre, emphasis, or delivery, but still clean speech"),
+        ("both", "Both — the character changed and there is also a glitch"),
+        ("none", "No audible difference between them"),
+    ]
+
+    def radio_group(field, name, opts):
+        inputs = "\n".join(
+            f'            <label><input type="radio" name="{name}" value="{val}" disabled> {text}</label>'
+            for val, text in opts
+        )
+        return f'          <div class="choices" data-field="{field}">\n{inputs}\n          </div>'
+
+    def verdict_block(tid):
+        return f"""        <div class="verdict" data-triple="{tid}">
+          <div class="q-block">
+            <p class="q-label">Q1 &middot; Does the prediction track the true clip? <span class="tick" data-tick data-triple="{tid}" data-field="q1"></span></p>
+{radio_group('q1', f'{tid}_q1', Q1_OPTS)}
+          </div>
+          <div class="q-block">
+            <p class="q-label">Q2 &middot; What kind of difference do you hear between the true clip and the control? <span class="tick" data-tick data-triple="{tid}" data-field="q2"></span></p>
+            <p class="q-sub">This asks what the perturbation did to the voice (true vs. control, not the prediction) —
+              an axis that is recoverable but glitchy is not a usable feature.</p>
+{radio_group('q2', f'{tid}_q2', Q2_OPTS)}
+          </div>
+          <div class="q-block">
+            <p class="q-label">Q3 &middot; Notes <span class="tick" data-tick data-triple="{tid}" data-field="notes"></span></p>
+            <textarea data-field="notes" data-triple="{tid}" disabled rows="2"
+              placeholder="Anything specific — a word, a moment, an artifact? e.g. hiccup at the end of &quot;jump&quot;"></textarea>
+          </div>
+        </div>"""
+
     k_sections = []
+    triples_for_js = []
     for K in K_LIST:
         s = k_summaries[K]
         rows_k = sorted([r for r in triples_meta if r["K"] == K], key=lambda r: RANK_ORDER[r["rank_label"]])
         ladders = []
         for row in rows_k:
             stem = f"K{K}_{row['rank_label']}_idx{row['idx']:05d}"
+            tid = f"K{K}_{row['rank_label']}"
+            triples_for_js.append({"id": tid, "k": K, "rank": row["rank_label"], "sample_r2": row["sample_r2"]})
             cells = [
                 clip(f"{LISTEN_DIR}/{stem}_true.wav", "true style", "ground truth",
                      "The actual perturbed style tensor for this sample -- what the probe was asked to recover.",
@@ -260,6 +425,7 @@ def build_html(k_summaries, triples_meta, matched_report, report):
         <div class="clips three">
 {chr(10).join(cells)}
         </div>
+{verdict_block(tid)}
       </div>""")
 
         k_sections.append(f"""      <div class="idgroup">
@@ -283,6 +449,32 @@ def build_html(k_summaries, triples_meta, matched_report, report):
     m4 = matched_report["results"]["4"]["per_component_r2_mean"]
     m16 = matched_report["results"]["16"]["per_component_r2_mean"]
     m64 = report["results"]["64"]["per_component_r2_mean"]  # K=64's default eps IS 0.20, no separate matched run
+
+    K_STOP_OPTS = [
+        ("k4", "K=4"), ("k16", "K=16"), ("k64", "K=64"),
+        ("never_inaudible", "it never becomes inaudible"), ("never_audible", "it was never audible"),
+    ]
+    PERTURBATION_EFFECT_OPTS = Q2_OPTS
+
+    overall_section = f"""  <section>
+    <h2>Overall</h2>
+    <p class="sect-note">One set of questions across all nine triples above, not per-K.</p>
+    <div class="verdict" data-triple="_overall">
+      <div class="q-block">
+        <p class="q-label">At which K does recovery stop being audible to you? <span class="tick" data-tick data-triple="_overall" data-field="k_stop"></span></p>
+{radio_group('k_stop', 'overall_kstop', K_STOP_OPTS)}
+      </div>
+      <div class="q-block">
+        <p class="q-label">Across all nine, what did the perturbations mostly do? <span class="tick" data-tick data-triple="_overall" data-field="perturbation_effect"></span></p>
+{radio_group('perturbation_effect', 'overall_perturbation_effect', PERTURBATION_EFFECT_OPTS)}
+      </div>
+      <div class="q-block">
+        <p class="q-label">Overall notes <span class="tick" data-tick data-triple="_overall" data-field="notes"></span></p>
+        <textarea data-field="notes" data-triple="_overall" disabled rows="3"
+          placeholder="Anything across the whole set -- a K where things fell apart, an artifact that kept recurring, a triple worth a second listen"></textarea>
+      </div>
+    </div>
+  </section>"""
 
     HTML = """<title>Capacity Bench</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
@@ -359,6 +551,30 @@ def build_html(k_summaries, triples_meta, matched_report, report):
   footer { border-top:1px solid var(--rule); padding-top:18px; font-size:14px; color:var(--ink-3); max-width:68ch; }
   code { font-family:var(--mono); font-size:.88em; background:var(--accent-soft); color:var(--ink); padding:1px 5px; border-radius:2px; }
   audio:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  .progress { font-family:var(--mono); font-size:12px; color:var(--ink-3); margin:0; }
+  .progress.ready { color:var(--accent); }
+  .progress.nodb { color:var(--flag); }
+  .formula { font-family:var(--mono); font-size:12.5px; color:var(--ink-2); background:var(--sunk); border:1px solid var(--rule); border-radius:3px; padding:10px 12px; margin:10px 0 0; line-height:1.55; }
+  .task ul { margin:0; padding-left:20px; color:var(--ink); }
+  .task ul li { margin-bottom:7px; }
+  .task ul li:last-child { margin-bottom:0; }
+
+  .verdict { margin-top:14px; padding-top:14px; border-top:1px dashed var(--rule); display:flex; flex-direction:column; gap:14px; }
+  .q-block { display:flex; flex-direction:column; gap:6px; }
+  .q-label { font-family:var(--sans); font-weight:600; font-size:12.5px; color:var(--ink); margin:0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .q-sub { font-size:12px; color:var(--ink-3); margin:-2px 0 2px; }
+  .choices { display:flex; flex-direction:column; gap:5px; }
+  .choices label { display:flex; align-items:flex-start; gap:7px; font-family:var(--sans); font-size:12.5px; color:var(--ink-2); cursor:pointer; }
+  .choices input[type="radio"] { margin-top:2px; accent-color:var(--accent); flex-shrink:0; }
+  textarea { width:100%; font-family:var(--sans); font-size:12.5px; color:var(--ink); background:var(--ground); border:1px solid var(--rule); border-radius:3px; padding:8px 10px; resize:vertical; box-sizing:border-box; }
+  textarea::placeholder { color:var(--ink-3); }
+  textarea:disabled, .choices input:disabled { opacity:.55; }
+  .tick { font-family:var(--mono); font-size:10px; letter-spacing:.04em; color:var(--ink-3); font-weight:400; }
+  .tick.saving { color:var(--ink-3); }
+  .tick.saved { color:var(--accent); }
+  .tick.err { color:var(--flag); }
+  .dbnote { font-family:var(--mono); font-size:11.5px; color:var(--flag); margin:2px 0 0; }
 </style>
 
 <div class="wrap">
@@ -369,7 +585,28 @@ def build_html(k_summaries, triples_meta, matched_report, report):
       as R&sup2; against the true subspace coefficients: 0.912 at K=4, 0.608 at K=16, 0.232 at K=64. Nobody has heard
       what those numbers mean. This bench renders the true style, the probe's prediction, and an unperturbed control
       side by side, so the R&sup2; ladder can be judged by ear instead of taken on faith.</p>
+    <p class="progress" id="progress-line">Checking saved responses&hellip;</p>
   </header>
+
+  <section>
+    <div class="task">
+      <p class="tag">What "true style" is, and isn't</p>
+      <ul>
+        <li>Every clip on this page is the <strong>same preset voice, M1</strong>. Nobody here is a different
+          speaker and nothing is a recorded human.</li>
+        <li><strong>base voice / control</strong> = M1 exactly as shipped, untouched.</li>
+        <li><strong>true style</strong> = M1 with a random perturbation applied &mdash; a synthetic nudge away
+          from M1, not a different voice:
+          <p class="formula">unit_rows(M1_active_rows + d)<br>d = a random direction inside the K-dimensional
+            subspace, scaled so the whole perturbation has Frobenius norm 0.20&middot;&radic;24</p>
+        </li>
+        <li><strong>probe prediction</strong> = M1 nudged in the direction the probe <em>guessed</em>, having
+          heard only the true clip's audio and never seen its tensor.</li>
+        <li>So all three sounding broadly alike is expected and is not itself the finding. The question is
+          whether the nudge survives the round trip.</li>
+      </ul>
+    </div>
+  </section>
 
   <section>
     <div class="task">
@@ -424,6 +661,8 @@ __K_SECTIONS__
     </div>
   </section>
 
+__OVERALL_SECTION__
+
   <section>
     <h2>The amplitude-matched control</h2>
     <p class="sect-note">A separate run held per-direction perturbation amplitude fixed across K instead of holding
@@ -471,15 +710,22 @@ __K_SECTIONS__
 <script>
 __PLAYER_PAUSE_SCRIPT__
 </script>
+<script>
+var TRIPLES = __TRIPLES_JSON__;
+__DB_SCRIPT__
+</script>
 """
 
     HTML = (HTML
             .replace("__SUMMARY_ROWS__", summary_rows)
             .replace("__K_SECTIONS__", "\n".join(k_sections))
+            .replace("__OVERALL_SECTION__", overall_section)
             .replace("__M4__", f"{m4:.3f}")
             .replace("__M16__", f"{m16:.3f}")
             .replace("__M64__", f"{m64:.3f}")
-            .replace("__PLAYER_PAUSE_SCRIPT__", PLAYER_PAUSE_SCRIPT))
+            .replace("__PLAYER_PAUSE_SCRIPT__", PLAYER_PAUSE_SCRIPT)
+            .replace("__TRIPLES_JSON__", json.dumps(triples_for_js))
+            .replace("__DB_SCRIPT__", DB_SCRIPT))
 
     with open(OUT_HTML, "w") as f:
         f.write(HTML)
