@@ -192,3 +192,39 @@ exist locally.
   so it cannot be used and no number from it is shown.
 - **Verdict:** pending -- this bench has been generated and run but not yet
   listened to.
+
+## 8. Phase 2a — Speed root-cause
+
+- **Artifact:** not published (per task instructions).
+- **Contains:** for each flagged sentence (woodchuck, seed 20261069;
+  seashells, seed 20261449 — both unperturbed M1, bench 6's control clips),
+  three level-matched, seed-matched comparison groups: (A) speed sweep
+  1.05/1.00/0.90 with per-word durations from faster-whisper; (B) the
+  standard trimmed render vs. the full untrimmed vocoder output at
+  speed=1.05, plus a dBFS comparison of the discarded tail against the kept
+  clip; (C) TOTAL_STEP 8 vs. 32 at speed=1.05. A pipeline-instrumentation
+  table (raw duration-predictor output, duration after `/speed`,
+  `latent_len`, raw vs. trimmed vocoder sample counts, discarded-tail dBFS)
+  sits above the clips. Each clip asks directly whether the previously
+  flagged artifact is still present.
+- **Generator:** `py/benches/phase2a_speed_rootcause_bench.py`, db
+  collection `speed_verdicts`.
+- **Inputs:** `py/results/phase2a/speed_rootcause.json` and
+  `speed_word_durations.json` (produced by `py/phase2a_speed_rootcause.py` +
+  `py/phase2a_speed_word_durations.py`), WAVs in
+  `py/results/listening_sets/phase2a_speed_rootcause/`.
+- **Measured findings (see report to the task's caller for the full
+  writeup):** `speed=1.05`'s default is upstream (commit `8518b83`, not
+  introduced by this fork). The discarded tail from the standard trim
+  measures ~-106 dBFS against a ~-26 dBFS clip (~80 dB down) in both
+  flagged renders — the post-hoc trim removes near-digital-silence, not
+  truncated speech, so effect (2) in the original hypothesis (audible
+  content being cut off) is not supported. The flagged/utterance-final
+  words lengthen as speed drops from 1.05 toward 0.90 in most
+  (sentence, seed) pairs, and in several cases lengthen faster than the
+  clip's overall duration does — more than a uniform time-stretch would
+  predict — consistent with those words being disproportionately
+  compressed at the default speed (effect 1: the acoustic model fitting
+  speech into a shrunk time budget). Not monotonic in every single seed
+  (faster-whisper word-boundary jitter is tens of ms).
+- **Verdict:** pending — bench built and rendered, not yet listened to.
