@@ -123,13 +123,13 @@ def main():
     per_preset = {}
     for preset in PRESETS:
         keys = [k for k in flux_by_key if k[0] == preset]
-        n_flag = sum(flagged(k) for k in keys)
+        n_flag = int(sum(flagged(k) for k in keys))
         per_preset[preset] = {"n": len(keys), "n_flagged": n_flag, "rate": n_flag / len(keys)}
 
     per_text = {}
     for t_i, text in enumerate(TEXTS):
         keys = [k for k in flux_by_key if k[1] == t_i]
-        n_flag = sum(flagged(k) for k in keys)
+        n_flag = int(sum(flagged(k) for k in keys))
         per_text[str(t_i)] = {"text": text, "n": len(keys), "n_flagged": n_flag, "rate": n_flag / len(keys)}
 
     # seed-to-seed variability of peak flux, per (preset, text) cell -- the
