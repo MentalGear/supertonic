@@ -612,3 +612,7 @@ this one; this roadmap's phase order is superseded.
 - A single-speaker delta should not be presented as a general emotion model.
 - Tags must be parsed before the existing text normalizer, which strips square
   brackets into spaces.
+- Supertonic produces audible glitches on stock, unperturbed output — the
+  unseeded vocoder, not style, is the source. See
+  [GLITCH_MITIGATION.md](GLITCH_MITIGATION.md) for what was measured, what
+  detector attempts failed, and the proposed (untested) mitigations.
