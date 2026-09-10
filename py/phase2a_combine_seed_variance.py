@@ -103,6 +103,51 @@ def main():
 
     detector_reliable = any_threshold_works and both_correct_direction
 
+    # --- supplementary probe: raw-waveform sample-to-sample discontinuity ---
+    # The log-mel flux detector above is anti-correlated with the listener's
+    # judgment. Tried as a cheap alternative (no re-rendering: reuses the same
+    # 4 already-saved WAVs): per-8ms-frame max |x[n]-x[n-1]|, RMS-normalized.
+    # This is directionally consistent (glitch > same-text clean) on BOTH known
+    # pairs, unlike log-mel flux -- but with only 2 pairs to calibrate against,
+    # and overlapping within-text percentile ranks (woodchuck-clean actually
+    # ranks higher than seashells-glitch), it is a lead, not a validated
+    # detector. Reported for the record, not used for any flag-rate claim.
+    def click_max(fname, hop_ms=8.0):
+        path = os.path.join(LISTEN_DIR, fname)
+        w, sr = sf.read(path)
+        w = w.astype(np.float64)
+        d = np.abs(np.diff(w))
+        rms = np.sqrt((w ** 2).mean())
+        frame = max(1, int(round(hop_ms / 1000.0 * sr)))
+        n = len(d) // frame
+        d = d[: n * frame].reshape(n, frame)
+        return float((d.max(axis=1) / max(rms, 1e-9)).max())
+
+    click_vals = {seed: click_max(fn) for seed, fn in control_files.items()}
+    click_ordering = {
+        "woodchuck: glitch(20261069) vs clean(20261295)": {
+            "glitch": click_vals[20261069], "clean": click_vals[20261295],
+            "glitch_higher": click_vals[20261069] > click_vals[20261295],
+        },
+        "seashells: glitch(20261449) vs clean(20262075)": {
+            "glitch": click_vals[20261449], "clean": click_vals[20262075],
+            "glitch_higher": click_vals[20261449] > click_vals[20262075],
+        },
+    }
+    click_both_correct = all(v["glitch_higher"] for v in click_ordering.values())
+    supplementary_click_probe = {
+        "description": "per-8ms-frame max |sample-to-sample waveform diff|, RMS-normalized, max over the render",
+        "values_by_seed": click_vals,
+        "ordering_check": click_ordering,
+        "both_pairs_correct_direction": click_both_correct,
+        "validated_as_detector": False,
+        "note": "Directionally consistent on both known pairs (unlike log-mel flux), but a single threshold "
+                "could not separate both pairs even after within-text percentile normalization (glitch "
+                "percentile 58.3 for seashells < clean percentile 72.2 for woodchuck) -- promising lead for "
+                "a follow-up detector, not itself validated. Not run across the 480-render baseline or the "
+                "full 72-render sweep due to time budget; would need both to become a reportable rate.",
+    }
+
     final = {
         "experiment": "phase2a_seed_variance_final",
         "detector_reliable": detector_reliable,
@@ -119,6 +164,7 @@ def main():
             "see raw distributional numbers in baseline_artifact_rate.json / seed_variance.json instead, "
             "explicitly marked as uncalibrated flux-distribution facts."
         ) if not detector_reliable else "Detector validated -- see validation_by_baseline_threshold for the working threshold.",
+        "supplementary_click_probe": supplementary_click_probe,
         "baseline_source": BASELINE_PATH,
         "stage1_source": SEED_VARIANCE_PATH,
     }
