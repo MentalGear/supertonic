@@ -2,10 +2,12 @@
 
 Supertonic produces audible artifacts ("hiccups") on its own, with no style
 perturbation involved. This doc records what was measured about that this
-session, what was tried and contradicted, and what is proposed but untested.
-Read [LISTENING_BENCHES.md](LISTENING_BENCHES.md) alongside this — bench 6
-is the listener evidence this doc starts from, and bench 7 is the open
-measurement it points to.
+session, what was tried and contradicted, what has a partial fix in place,
+and what is proposed but untested. Read
+[LISTENING_BENCHES.md](LISTENING_BENCHES.md) alongside this — bench 6 is the
+listener evidence this doc starts from, bench 7 is the open baseline
+measurement it points to, and bench 8 is the speed root-cause investigation
+behind the fix below.
 
 ## The finding
 
@@ -138,19 +140,77 @@ rather than the whole utterance (whole-utterance distance is dominated by
 frames that carry no instability at all, which is a plausible reason the
 whole-clip medoid picked the wrong seed).
 
-## Mitigations (proposed, not established)
+## Mitigations
 
-None of the following has been tested. Each entry states its cost and how
-it would be tested.
+### Applied, partial evidence: restore the default `speed` to 1.0
 
-1. **Expose the vocoder seed in the public API**, in both `py/helper.py` and
+This fork's default is now `speed=1.0` in both `py/helper.py` and
+`web/helper.js` (previously `1.05`, matching upstream). This is no longer a
+hypothesis on the table below — it is the shipped default — but the
+listening evidence for it as a *glitch* fix is partial, and the two should
+not be conflated:
+
+- **The principled case stands on its own**, independent of any artifact.
+  `dur_onnx = dur_onnx / speed` at `speed=1.05` shrinks the duration
+  predictor's own trained time estimate by 4.76% on every default render.
+  Upstream commit `8518b839` ("add speed parameter", 2025-11-19) introduced
+  both the parameter and the `1.05` default across all nine language
+  bindings in one commit, with no recorded rationale — the commit message is
+  three words, and the README states only the value and a recommended
+  range. Restoring `1.0` restores the model's own prediction and matches
+  pre-2025-11-19 behaviour.
+- **The artifact evidence is one sentence, with a second unreproduced.**
+  Bench 8 (`py/phase2a_speed_rootcause.py`, see
+  [LISTENING_BENCHES.md](LISTENING_BENCHES.md#8-phase-2a--speed-root-cause))
+  ran a speed sweep {1.05, 1.00, 0.90} at fixed seed and text. On "She sells
+  seashells by the sea shore every summer morning.", the previously flagged
+  compression artifact was clearly present at `speed=1.05` and absent at
+  both `1.00` and `0.90`. The second flagged sentence ("How much wood would
+  a woodchuck chuck...") showed no artifact at any speed, but its three
+  ratings were logged 2 seconds apart on 4-second clips — too close to trust
+  — so that row is not treated as evidence and a re-test is outstanding.
+  Rating noise is on the order of ±1 category (measured from an accidental
+  control: two acoustically identical clips, differing only by a discarded
+  tail ~80 dB below the signal, were rated a category apart), which bounds
+  how much can be read into a single-sentence result either way.
+- **Speed is not the whole mechanism.** On the same seashells sentence at
+  unchanged `speed=1.05`, raising `TOTAL_STEP` from 8 to 32 also removed the
+  artifact (see the item below). Duration is invariant to step count, so the
+  artifact is not purely a duration effect — compression appears to make the
+  acoustic modeling problem harder, and too few denoising steps cannot
+  resolve it at the tightened duration.
+- **Measured word durations are consistent with compression.** In the
+  speed sweep, flagged and utterance-final words lengthen as speed drops,
+  and the final word grows super-proportionally to the clip as a whole (on
+  one seed, +50% word duration against +17% clip duration from 1.05 to
+  0.90) — more than a uniform time-stretch would predict.
+
+Net: do not claim the artifact is fixed. Claim the default is restored to
+the model's own prediction, on solid independent grounds, with one
+supporting listening result and one open re-test. To reproduce the old
+behaviour, pass `speed=1.05` explicitly.
+
+### Proposed, not established
+
+Each entry states its cost and how it would be tested.
+
+1. **Raise `TOTAL_STEP`** (every corpus generated this session used 8).
+   Partially tested, not established: on the single flagged sentence above,
+   `TOTAL_STEP=32` at unchanged `speed=1.05` removed the artifact, same as
+   dropping speed did. Cost: purely an inference-time parameter, no code
+   change, but proportionally slower rendering. Remaining test: by ear,
+   since no automated detector here has passed validation against the
+   listener — rerun a bench-6-style triple set at a higher step count,
+   including the unreproduced second sentence, and ask the same listener the
+   same question.
+2. **Expose the vocoder seed in the public API**, in both `py/helper.py` and
    `web/helper.js`, defaulting to today's unseeded behaviour. Low cost — a
    plumbing change, no model or algorithm change. This is the precondition
-   for everything below it: without a reproducible seed, a user can neither
-   confirm a good render nor retry a bad one, and no mitigation that
-   selects or targets a render can be evaluated repeatably. Test: render the
-   same (style, seed) twice, confirm bit-identical output.
-2. **Predict artifact risk from text before rendering**, and spend extra
+   for anything below it that selects or targets a render: without a
+   reproducible seed, a user can neither confirm a good render nor retry a
+   bad one. Test: render the same (style, seed) twice, confirm bit-identical
+   output.
+3. **Predict artifact risk from text before rendering**, and spend extra
    denoising steps only where risk is high. Motivated by the cross-seed
    result above: instability is a property of the *word*, not the render,
    and it concentrated in stressed, phonetically dense content syllables in
@@ -163,12 +223,6 @@ it would be tested.
    support at word granularity — unverified. Test: does risk correlate with
    the cross-seed spread measure on a corpus beyond the two texts used here,
    and does added denoising measurably reduce spread on flagged words.
-3. **Raise `TOTAL_STEP`** (every corpus generated this session used 8) and
-   test whether the artifact rate falls. Cost: purely an inference-time
-   parameter, no code change, but proportionally slower rendering. Test: by
-   ear, since no automated detector here has passed validation against the
-   listener — rerun a bench-6-style triple set at a higher step count and
-   ask the same listener the same question.
 4. **Medoid-of-N** — listed here only as contradicted (see above), not as a
    live proposal. Before revisiting it: either a larger labelled set to
    properly test which direction the effect runs, or restricting the

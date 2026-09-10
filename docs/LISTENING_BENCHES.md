@@ -147,14 +147,32 @@ exist locally.
   reports), all produced by `phase2b_generate_subspace.py` +
   `phase2b_subspace_embed.py` + `phase2b_subspace_probe.py`. Outputs land in
   `py/results/listening_sets/phase2a_capacity/` (27 WAVs + manifest.json).
-- **Verdict:** pending — awaiting a listener's judgment on where along the
-  K=4/16/64 ladder the prediction stops being audibly distinguishable from
-  the no-perturbation control. Note: an active-row style cosine was computed
-  for every clip but deliberately left out of the page — it came back
-  nearly flat (0.98–0.99) across the whole R&sup2; range, which is exactly
-  what bench 5 already found calibrating that same metric (it does not
-  separate same-/different-speaker pairs), so surfacing it here would have
-  presented an uncalibrated number next to the calibrated one under test.
+- **Verdict:** answered — nine triples (best/typical/worst at each of
+  K=4/16/64) rated by ear. Per triple, R&sup2; alongside the listener's call:
+  K=4 best 0.991 "cannot tell", typical 0.926 "prediction matches true /
+  glitch", worst 0.603 "cannot tell"; K=16 best 0.838 "partway / glitch",
+  typical 0.620 "matches true / glitch", worst 0.271 "partway / glitch";
+  K=64 best 0.464, typical 0.249, worst -0.090 — all three "cannot tell, all
+  three sound the same".
+  Two findings follow. (1) Audibility does not track R&sup2;: the bench's
+  single highest score, K=4 best at R&sup2;=0.991 — a near-perfect
+  reconstruction — was indistinguishable from the unperturbed control, while
+  K=16 worst at R&sup2;=0.271 was audible. The capacity metric measures
+  something real about information flow that is substantially decoupled
+  from what a listener can hear, which is worth knowing before any encoder
+  is built to maximise it. (2) Nothing was audible at K=64, at this
+  perturbation magnitude — stated as that weaker claim only; this is three
+  clips per rung and does not carry a claimed peak at K=16.
+  The listener's notes also revealed that two of the three annotated
+  glitches landed in the *control* clip — stock, unperturbed Supertonic, not
+  a prediction — which is what redirected the investigation into benches 7
+  and 8 below (baseline artifact rate and its root cause).
+  Note: an active-row style cosine was computed for every clip but
+  deliberately left out of the page — it came back nearly flat (0.98–0.99)
+  across the whole R&sup2; range, which is exactly what bench 5 already found
+  calibrating that same metric (it does not separate same-/different-speaker
+  pairs), so surfacing it here would have presented an uncalibrated number
+  next to the calibrated one under test.
 
 
 ## 7. Phase 2a — Baseline artifact rate
@@ -227,4 +245,26 @@ exist locally.
   compressed at the default speed (effect 1: the acoustic model fitting
   speech into a shrunk time budget). Not monotonic in every single seed
   (faster-whisper word-boundary jitter is tens of ms).
-- **Verdict:** pending — bench built and rendered, not yet listened to.
+- **Verdict:** partially answered, and the partiality matters. Seashells was
+  cleanly rated across the speed sweep: artifact "clearly still there" at
+  speed 1.05 (upstream's default), "no" at 1.00, "no" at 0.90. Separately, at
+  speed held fixed at 1.05, TOTAL_STEP 8 read "somewhat" and TOTAL_STEP 32
+  read "no". Duration is invariant to step count by construction, so two
+  independent levers are acting on the same artifact and speed is not the
+  whole mechanism — the reading is that compression makes the acoustic
+  problem harder, and 8 denoising steps cannot resolve it while 32 can.
+  Woodchuck returned "no artifact" at every setting, including the clip
+  previously annotated as condensed — but its three ratings were saved 2
+  seconds apart on 4-second clips, so that row is **not** treated as
+  evidence; a re-test is outstanding.
+  The accidental control calibrates the rest: the trimmed and untrimmed
+  clips are acoustically identical (discarded tail ~80 dB below the signal)
+  and were rated one category apart, giving a rating-noise floor of roughly
+  &plusmn;1 category — which is what makes the seashells 1.05-to-1.00 result,
+  a two-category jump, meaningful.
+  Conclusion: the artifact evidence is one sentence with a second
+  (unreproduced) sentence, so the fork's change of the `speed` default to
+  1.0 rests on the principled argument — restoring the model's own trained
+  duration prediction, and matching pre-November-2025 behaviour — rather
+  than on this bench. See `docs/GLITCH_MITIGATION.md` and
+  `docs/upstream_pr_speed_default.md`.

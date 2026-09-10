@@ -64,6 +64,13 @@ inline burns the context the main loop needs for judgment.
   `vector_estimator`, and only `text_mask`/`latent_mask` cross the boundary.
   Rate and rhythm control, if it is reachable at all, has to come through
   `style_ttl`.
+- **This fork's `speed` default is `1.0`, not upstream's `1.05`, on purpose.**
+  `1.05` divides the duration predictor's own trained estimate on every
+  default render, a change upstream introduced with the parameter itself
+  (commit `8518b839`) and never explained. `1.0` restores the model's own
+  prediction; pass `speed=1.05` for upstream's behaviour. See
+  [docs/GLITCH_MITIGATION.md](docs/GLITCH_MITIGATION.md) for the (partial)
+  listening evidence. Do not "fix" this back to `1.05` by syncing upstream.
 - **Style blending lives in `py/helper.py` (`Style`) and `web/helper.js`.**
   Changes to blending semantics must land in both — the browser path is not
   generated from the Python one, and the two silently diverged once already
