@@ -155,3 +155,40 @@ exist locally.
   what bench 5 already found calibrating that same metric (it does not
   separate same-/different-speaker pairs), so surfacing it here would have
   presented an uncalibrated number next to the calibrated one under test.
+
+
+## 7. Phase 2a — Baseline artifact rate
+
+- **Artifact:** not yet published.
+- **Contains:** 20 clips drawn blind from stock, completely unperturbed
+  Supertonic (all 10 shipped presets, a mix of the 8 corpus texts and 6
+  seeds per preset/text cell), asking only whether the listener hears an
+  audible artifact and where. 4 of the 20 are exact repeats of the bench-6
+  control clips a listener already judged (woodchuck M1 seed 20261069
+  "hiccupy" / seed 20261295 "clean"; seashells M1 seed 20261449 "hiccupy" /
+  seed 20262075 clean), mixed in unlabelled as internal consistency checks.
+  Labels are blind ("Clip 01"-"Clip 20"); a reveal is available per clip
+  only after answering. Includes a Wilson-interval table stating plainly
+  that 20 clips gives only a coarse rate. Explicitly states why an automated
+  detector was not used instead (see below).
+- **Generator:** `py/benches/phase2a_baseline_bench.py` -- re-renders the 16
+  non-check clips from the exact (preset, text, seed) triples recorded in
+  `results/phase2a/baseline_artifact_rate.json` (that script's own audio is
+  not retained -- its docstring says so explicitly), using the identical
+  code path so the audio matches what was already characterized
+  numerically; the 4 check clips are copied verbatim from an existing
+  listening set rather than re-rendered.
+- **Inputs:** `py/results/phase2a/baseline_artifact_rate.json` (480-render
+  characterization, no audio),
+  `py/results/listening_sets/phase2a_seed_variance/` (source of the 4
+  check-clip WAVs). Outputs land in
+  `py/results/listening_sets/phase2a_baseline/` (20 WAVs + manifest.json).
+- **Why no detector-based number appears:** a frame-to-frame log-mel
+  spectral-flux detector, thresholded on the 480-render stock pool, flags
+  98.5% of all stock renders regardless of preset or text -- it fires on
+  ordinary consonant transients. Worse, on the two bench-6 pairs with an
+  explicit listener verdict its ordering is reversed against the listener
+  (see `phase2a_seed_variance.py`'s `detector_validation_against_listener`),
+  so it cannot be used and no number from it is shown.
+- **Verdict:** pending -- this bench has been generated and run but not yet
+  listened to.
