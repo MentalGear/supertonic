@@ -93,6 +93,20 @@ inline burns the context the main loop needs for judgment.
   `python3 -m unittest discover -s py -p "test_*.py"`.
 - **Do not commit ignored assets**: ONNX models, recordings, extracted style
   JSONs, generated WAVs.
+- **Ask listeners what they hear, not whether a known artifact persists.** A
+  bench that asks "is the artifact you flagged before still present in this
+  clip?" primes the listener to re-identify a description rather than report
+  a fresh perception — and can suppress a real detection. Measured directly:
+  bench 8 asked that leading question of a woodchuck clip and got "no" at
+  every speed; the same clip, verified bit-identical (waveform correlation
+  1.00000000), was played blind in bench 7 under the open question "do you
+  hear an audible artifact in this clip?" and came back "yes, clearly, chuck
+  too condensed" — seven minutes later, on the same audio. Prefer the open
+  question and let the listener describe what they hear unprompted; a
+  leading question is a legitimate follow-up once, never the first ask. This
+  sits alongside the "make the listening task explicit" bullet below: be
+  explicit about the TASK the listener is doing, never about the answer you
+  expect.
 - **Vocoder sampling is unseeded.** `sample_noisy_latent()` in `py/helper.py`
   draws `np.random.randn` with no seed, so rendering the same style tensor twice
   gives audibly different waveforms. Any "is this the same as before" check must

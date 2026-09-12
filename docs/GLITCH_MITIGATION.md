@@ -5,9 +5,10 @@ perturbation involved. This doc records what was measured about that this
 session, what was tried and contradicted, what has a partial fix in place,
 and what is proposed but untested. Read
 [LISTENING_BENCHES.md](LISTENING_BENCHES.md) alongside this — bench 6 is the
-listener evidence this doc starts from, bench 7 is the open baseline
-measurement it points to, and bench 8 is the speed root-cause investigation
-behind the fix below.
+listener evidence this doc starts from, bench 7 is the baseline rate
+measurement it points to (now answered), and bench 8 is the speed
+root-cause investigation behind the fix below (partially amended by bench 7 —
+see below).
 
 ## The finding
 
@@ -159,16 +160,25 @@ not be conflated:
   three words, and the README states only the value and a recommended
   range. Restoring `1.0` restores the model's own prediction and matches
   pre-2025-11-19 behaviour.
-- **The artifact evidence is one sentence, with a second unreproduced.**
-  Bench 8 (`py/phase2a_speed_rootcause.py`, see
+- **The artifact evidence is one sentence, corroborated; the second is
+  known-unreliable, not merely unreproduced.** Bench 8
+  (`py/phase2a_speed_rootcause.py`, see
   [LISTENING_BENCHES.md](LISTENING_BENCHES.md#8-phase-2a--speed-root-cause))
   ran a speed sweep {1.05, 1.00, 0.90} at fixed seed and text. On "She sells
   seashells by the sea shore every summer morning.", the previously flagged
   compression artifact was clearly present at `speed=1.05` and absent at
-  both `1.00` and `0.90`. The second flagged sentence ("How much wood would
-  a woodchuck chuck...") showed no artifact at any speed, but its three
-  ratings were logged 2 seconds apart on 4-second clips — too close to trust
-  — so that row is not treated as evidence and a re-test is outstanding.
+  both `1.00` and `0.90` — **now corroborated by bench 7**: bench 7's clip13
+  is bit-identical to this bench's seashells speed-1.05 clip, and both were
+  independently flagged "yes, clearly". The second flagged sentence ("How
+  much wood would a woodchuck chuck...") showed no artifact at any speed, but
+  its three ratings were logged 2 seconds apart on 4-second clips — too close
+  to trust — so that row was not treated as evidence and a re-test was
+  outstanding. Bench 7 supplies the explanation: the *same* bit-identical
+  woodchuck clip, asked the open question "do you hear an audible artifact"
+  instead of "is the artifact you flagged before still present," came back
+  "yes, clearly, chuck too condensed." Bench 8's woodchuck row was suppressed
+  by its own leading phrasing, not a genuine null — it remains unusable, and
+  the re-test (now due with an open question) is still outstanding.
   Rating noise is on the order of ±1 category (measured from an accidental
   control: two acoustically identical clips, differing only by a discarded
   tail ~80 dB below the signal, were rated a category apart), which bounds
@@ -185,10 +195,13 @@ not be conflated:
   one seed, +50% word duration against +17% clip duration from 1.05 to
   0.90) — more than a uniform time-stretch would predict.
 
-Net: do not claim the artifact is fixed. Claim the default is restored to
-the model's own prediction, on solid independent grounds, with one
-supporting listening result and one open re-test. To reproduce the old
-behaviour, pass `speed=1.05` explicitly.
+Net: do not claim the artifact is fixed — bench 7 shows a second, unrelated
+artifact family (sibilant over-drive) that speed does not touch. Claim the
+default is restored to the model's own prediction, on solid independent
+grounds, with one corroborated supporting listening result (seashells) and
+one row (woodchuck) known to be compromised by leading question framing
+rather than genuinely null, with its re-test still outstanding. To
+reproduce the old behaviour, pass `speed=1.05` explicitly.
 
 ### Proposed, not established
 
@@ -229,15 +242,35 @@ Each entry states its cost and how it would be tested.
    distance to the words the cross-seed analysis flags as unstable rather
    than scoring the whole utterance.
 
-## Open
+## The baseline artifact rate (measured)
 
-**The baseline artifact rate is unmeasured.** The automated attempt
-(spectral flux, above) failed validation, so it is being put to a human
-directly: listening bench 7, 20 blind stock clips (all 10 shipped presets,
-a mix of 8 corpus texts and 6 seeds per preset/text cell), 4 of them exact
-repeats of the bench-6 control clips above mixed in unlabelled as internal
-consistency checks. See bench 7 in
-[LISTENING_BENCHES.md](LISTENING_BENCHES.md) for the generator, inputs, and
-why no detector-based number is shown there. That bench has been generated
-but not yet listened to — its verdict is the next fact this doc is waiting
-on.
+Bench 7 (20 blind stock clips, all 10 shipped presets, a mix of 8 corpus
+texts and 6 seeds per preset/text cell, 4 hidden repeats of the bench-6
+control clips as internal consistency checks) answers what was previously
+open here. See bench 7 in [LISTENING_BENCHES.md](LISTENING_BENCHES.md) for
+the generator, inputs, and full verdict; summary:
+
+- **Consistency: 4 of 4 hidden repeats reproduced the listener's earlier,
+  independently-worded judgements**, blind — including which word was
+  flagged. This is the reason the ear, not any automated measure, is treated
+  as the reliable instrument in this doc.
+- **Rate: of the 16 randomly drawn stock clips, 1 flagged "yes, clearly"
+  (6.2%, Wilson 95% CI 1.1%-28.3%), 3 more "maybe" (25% combined, CI
+  10.2%-49.5%), 12 clean.** Stock Supertonic produces a clearly audible
+  artifact on roughly one render in sixteen; the interval is wide enough that
+  only the order of magnitude is established.
+- **Two artifact families, not one.** Time compression ("condensed",
+  "time-condensed final word", "too quickly") is what the speed default,
+  below, addresses. **Sibilant over-drive is separate and unexplained** — "a
+  strong sharp 's' over-drive resulting in a sharp hissing" was the single
+  clear flag among the randomly drawn clips, with two more "maybe"s citing
+  sharp 's'-sounds. The speed fix does not touch this second family, and it
+  was the only clear flag in the random draw — so the speed fix should not be
+  read as addressing "the" baseline artifact rate; it addresses one of two
+  known causes.
+- **Every flagged clip was a female preset**: 4 of 8 female-preset clips
+  flagged (F1, F3, F5 twice), 0 of 8 male-preset clips (Fisher exact
+  one-sided p = 0.038). Small sample — this is a new observation, not an
+  established effect — but every prior artifact measurement in this project
+  used M1, so the rates and the mechanism above may both understate what a
+  female preset does.

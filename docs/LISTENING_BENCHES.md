@@ -208,8 +208,55 @@ exist locally.
   explicit listener verdict its ordering is reversed against the listener
   (see `phase2a_seed_variance.py`'s `detector_validation_against_listener`),
   so it cannot be used and no number from it is shown.
-- **Verdict:** pending -- this bench has been generated and run but not yet
-  listened to.
+- **Verdict:** answered, blind, 20 clips.
+  **Consistency check: 4 of 4 hidden repeats agreed with the listener's
+  earlier judgements**, blind and unlabelled:
+  - woodchuck M1 seed 20261069, previously "hiccupy" -> "yes, clearly", note:
+    "chuck too condensed" (originally: "the 'chuck' after woodchuck sounds
+    condensed/hiccuped")
+  - seashells M1 seed 20261449, previously "hiccupy" -> "yes, clearly", note:
+    "time-condensed final word, maybe slightly too sharp 's'-es" (originally:
+    "the final word 'morning' is pronounced too quickly so it sounds like a
+    hiccup")
+  - seashells M1 seed 20262075, previously clean -> "no, sounds clean"
+  - woodchuck M1 seed 20261295, previously clean -> "maybe, something
+    slightly off"
+  The listener reproduced their own prior descriptions nearly verbatim,
+  including which word, on audio they could not have known was a repeat.
+  This is the evidence that the ear is the reliable instrument in this
+  project, after four automated measures failed validation (see bench 6 and
+  `docs/GLITCH_MITIGATION.md`).
+  **Baseline artifact rate**, of the 16 randomly drawn stock clips: 1 flagged
+  "yes, clearly" (6.2%, Wilson 95% CI 1.1%-28.3%), 3 more "maybe" (25%
+  combined, CI 10.2%-49.5%), 12 clean. Stock Supertonic produces a clearly
+  audible artifact on roughly one render in sixteen, with an interval wide
+  enough that only the order of magnitude is established.
+  **Every flagged clip was a female preset**: 4 of 8 female-preset clips
+  flagged (F1, F3, F5 twice), 0 of 8 male-preset clips (Fisher exact
+  one-sided p = 0.038). Small sample, but a clean split. Every artifact
+  measurement in this project so far used M1, so all of them may understate
+  the true rate.
+  **Two artifact families, not one.** Time compression ("condensed",
+  "time-condensed final word", "too quickly") is what the speed default
+  (bench 8, below) explains. Sibilant over-drive is separate and unexplained:
+  "a strong sharp 's' over-drive resulting in a sharp hissing" (the single
+  clear flag among the random clips), "maybe the 's'-es are a bit sharp, but
+  that might be normal accumulation (amplitude) peaks given how many there
+  are in quick succession", "slightly too sharp 's'-es". The speed fix does
+  not address this second family, and the second family was the only CLEAR
+  flag among the randomly drawn clips.
+  **Methodological finding — leading vs. open questions.** Bench 8 asked "Is
+  the artifact you flagged before still present in this clip?" and got "no"
+  for the woodchuck clip at every speed. This bench asked the open question
+  "Do you hear an audible artifact in this clip?", blind, and the SAME clip
+  — verified bit-identical, waveform correlation 1.00000000 — came back "yes,
+  clearly, chuck too condensed", seven minutes later. A leading question that
+  presupposes the listener can re-identify a previously-described artifact
+  suppressed a detection that an open question recovered. The bench-8
+  woodchuck ladder is therefore unusable as evidence, and the speed
+  hypothesis still rests on the seashells sentence alone. See bench 8's
+  amended verdict below, and the new CLAUDE.md bullet on open vs. leading
+  questions.
 
 ## 8. Phase 2a — Speed root-cause
 
@@ -245,18 +292,28 @@ exist locally.
   compressed at the default speed (effect 1: the acoustic model fitting
   speech into a shrunk time budget). Not monotonic in every single seed
   (faster-whisper word-boundary jitter is tens of ms).
-- **Verdict:** partially answered, and the partiality matters. Seashells was
-  cleanly rated across the speed sweep: artifact "clearly still there" at
-  speed 1.05 (upstream's default), "no" at 1.00, "no" at 0.90. Separately, at
-  speed held fixed at 1.05, TOTAL_STEP 8 read "somewhat" and TOTAL_STEP 32
-  read "no". Duration is invariant to step count by construction, so two
-  independent levers are acting on the same artifact and speed is not the
-  whole mechanism — the reading is that compression makes the acoustic
-  problem harder, and 8 denoising steps cannot resolve it while 32 can.
+- **Verdict:** partially answered, and the partiality matters — **amended**
+  after bench 7. Seashells was cleanly rated across the speed sweep: artifact
+  "clearly still there" at speed 1.05 (upstream's default), "no" at 1.00,
+  "no" at 0.90. Separately, at speed held fixed at 1.05, TOTAL_STEP 8 read
+  "somewhat" and TOTAL_STEP 32 read "no". Duration is invariant to step count
+  by construction, so two independent levers are acting on the same artifact
+  and speed is not the whole mechanism — the reading is that compression
+  makes the acoustic problem harder, and 8 denoising steps cannot resolve it
+  while 32 can. This row is now **CORROBORATED**: bench 7's clip13 is
+  bit-identical to this bench's seashells speed-1.05 clip, and both were
+  independently flagged "yes, clearly".
   Woodchuck returned "no artifact" at every setting, including the clip
-  previously annotated as condensed — but its three ratings were saved 2
-  seconds apart on 4-second clips, so that row is **not** treated as
-  evidence; a re-test is outstanding.
+  previously annotated as condensed — its three ratings were saved 2 seconds
+  apart on 4-second clips, which was already flagged as too close to trust.
+  Bench 7 has since shown why: the same bit-identical woodchuck clip, asked
+  the open question "do you hear an audible artifact" instead of "is the
+  artifact you flagged before still present," came back "yes, clearly, chuck
+  too condensed." The woodchuck row here is now understood to be a
+  question-framing artifact — the leading phrasing suppressed a detection an
+  open question recovered — not a genuine null, and it is **not** usable as
+  evidence that speed has no effect on woodchuck; a re-test with an open
+  question is outstanding.
   The accidental control calibrates the rest: the trimmed and untrimmed
   clips are acoustically identical (discarded tail ~80 dB below the signal)
   and were rated one category apart, giving a rating-noise floor of roughly
