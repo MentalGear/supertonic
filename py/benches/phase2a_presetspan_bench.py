@@ -435,7 +435,7 @@ def build_html(groups, manifest):
       against the reference above it.</p>
     <article class="clip anchor">
       <div class="clip-head"><span class="clip-label">Reference (unperturbed {manifest['base_preset']})</span></div>
-      <audio controls preload="metadata" src="data:audio/wav;base64,{b64(g['reference']['wav_path'])}"></audio>
+      <audio controls preload="metadata" src="data:audio/wav;base64,{b64(g['ref_path'])}"></audio>
     </article>
     <div class="clips">
 {slots_html}
