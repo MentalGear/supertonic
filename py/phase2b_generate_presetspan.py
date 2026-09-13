@@ -33,6 +33,25 @@ Two conditions, identical in every respect except which subspace:
      rank (`B[:rank]`). Because that basis is QR-nested, slicing to any rank
      gives a genuine draw from the same distribution over that many
      directions, not something recomputed differently.
+  C. row-matched random control (deconfound).  Condition A beat condition B,
+     but the two bases differ in two ways, not one: A is on-manifold (built
+     from real preset differences) AND A's per-row energy is uneven (max/
+     uniform 1.39x) while B's is nearly flat (1.07x) -- real voices load rows
+     unevenly, an isotropic random basis does not. So the gap between A and B
+     could be "real voice directions matter" or it could just be "concentrated
+     row loading matters", and those imply opposite Phase-3 designs. Condition
+     C isolates row concentration: start from a fresh isotropic random
+     subspace (independent seed, same `build_basis` construction as B), then
+     apply a per-active-row diagonal rescaling to the ambient 6,144-dim
+     tangent space and re-orthonormalize, iterating a few times (rescaling
+     perturbs the achieved profile, so a single shot undershoots) until the
+     row-energy profile matches A's as closely as it will get. This changes
+     WHERE the random subspace's energy sits across rows without pulling any
+     of its directions toward the preset differences themselves -- C is still
+     a random subspace, just an anisotropically-weighted one, so a score near
+     A's implicates row concentration and a score near B's implicates
+     on-manifoldness. See `build_row_matched_random_basis` and the module
+     CLAUDE.md bullet on calibrating distances/confounds before citing them.
 
 Both conditions: base preset M1, the same 8 TEXTS, 320 samples each
 (240 train / 80 test, random split, matching phase2b_generate_subspace's
@@ -123,8 +142,17 @@ EPS = 0.20  # matches phase2b_generate_subspace's eps=0.20 total perturbation en
 BASIS_SEED_B = SEED_BASE + 5000
 SAMPLE_SEED = SEED_BASE + 5001
 
+# Condition C's starting isotropic draw: a seed independent of BASIS_SEED_B so
+# it is a fresh random subspace, not the reweighted random-control basis --
+# the point of condition C is a *separate* random draw that happens to share
+# A's row-energy profile, so it can't be accused of secretly being a
+# perturbation of B either.
+BASIS_SEED_C = SEED_BASE + 6000
+ROW_MATCH_MAX_ITERS = 40
+ROW_MATCH_TOL = 1e-4  # max abs deviation of achieved profile from target, per row
+
 OUT_ROOT = "results/phase2b_presetspan"
-CONDITIONS = ["preset_span", "random_control"]
+CONDITIONS = ["preset_span", "random_control", "row_matched_random"]
 
 
 def build_presetspan_basis(base_ttl: np.ndarray, presets: dict):
@@ -187,7 +215,70 @@ def row_energy_balance(B: np.ndarray, n_rows: int = 24, n_cols: int = 256):
     return per_row_mean, float(per_row_mean.max() / uniform)
 
 
-def report_geometry(B_a, B_b, P, extras, rank, out_dir):
+def build_row_matched_random_basis(base_ttl: np.ndarray, rank: int, target_profile: np.ndarray,
+                                    seed: int, n_iter: int = ROW_MATCH_MAX_ITERS,
+                                    tol: float = ROW_MATCH_TOL):
+    """A random tangent-space subspace of the given rank, reweighted per active
+    row so its row-energy profile matches `target_profile` (24,) as closely as
+    it will get.
+
+    Per-row energy of a subspace (trace of the orthogonal projector's diagonal
+    block for that row, averaged over the `rank` orthonormal directions -- see
+    `row_energy_balance`) is a property of the SUBSPACE, not of which
+    orthonormal basis represents it: B^T B is basis-independent. So matching
+    it means finding a different subspace, not just re-rotating this one.
+    A per-row diagonal rescaling of the ambient 6,144-dim tangent space is a
+    fixed linear map D_w (same scalar w[r] applied to all 256 columns of row
+    r, for every one of the `rank` directions); applying it to any spanning
+    set of the isotropic subspace V and re-orthonormalizing gives the
+    subspace D_w(V), whose row-energy profile can be pushed toward the target
+    by adjusting w. Re-orthonormalizing after each rescale changes the
+    profile again (QR mixes the `rank` directions), so this iterates a fixed-
+    point-style correction: measure the achieved profile, multiply w by
+    sqrt(target / achieved) (always applied to the ORIGINAL isotropic
+    directions, so weights compose multiplicatively rather than drifting),
+    and repeat until the max per-row deviation is within `tol` or `n_iter` is
+    exhausted.
+
+    Returns (B, achieved_profile, achieved_ratio, weights, n_iters_used,
+    final_max_abs_dev) -- the achieved match is reported, not assumed.
+    """
+    P = base_ttl[0, ACTIVE_ROWS, :].astype(np.float64)  # (24, 256)
+    n_rows, n_cols = P.shape
+    assert target_profile.shape == (n_rows,)
+
+    rng = np.random.default_rng(seed)
+    G = rng.standard_normal((rank, n_rows, n_cols))
+    radial = np.einsum("jrc,rc->jr", G, P)
+    G -= radial[:, :, None] * P[None, :, :]
+    G_flat = G.reshape(rank, n_rows * n_cols)
+    Q0, _ = np.linalg.qr(G_flat.T, mode="reduced")  # (6144, rank)
+    V = Q0.T.reshape(rank, n_rows, n_cols)  # isotropic tangent basis, orthonormal, unweighted
+
+    w = np.ones(n_rows)
+    B = None
+    achieved_profile = None
+    achieved_ratio = None
+    max_abs_dev = None
+    n_used = 0
+    eps_guard = 1e-12
+    for it in range(1, n_iter + 1):
+        Vw = V * w[None, :, None]
+        Vw_flat = Vw.reshape(rank, n_rows * n_cols)
+        Qw, _ = np.linalg.qr(Vw_flat.T, mode="reduced")
+        B = Qw.T  # (rank, 6144), orthonormal rows spanning D_w(V)
+
+        achieved_profile, achieved_ratio = row_energy_balance(B, n_rows, n_cols)
+        max_abs_dev = float(np.abs(achieved_profile - target_profile).max())
+        n_used = it
+        if max_abs_dev < tol:
+            break
+        w = w * np.sqrt((target_profile + eps_guard) / (achieved_profile + eps_guard))
+
+    return B, achieved_profile, achieved_ratio, w, n_used, max_abs_dev
+
+
+def report_geometry(B_a, B_b, B_c, P, extras, rank, out_dir, row_match_info):
     print(f"\n=== Preset-span geometry (base={BASE_PRESET}) ===")
     print(f"numerical rank of 9 tangent-projected preset differences: "
           f"{extras['rank_eps']} (loose 1e-10 threshold: {extras['rank_loose_1e-10']})")
@@ -201,15 +292,26 @@ def report_geometry(B_a, B_b, P, extras, rank, out_dir):
 
     row_a, ratio_a = row_energy_balance(B_a)
     row_b, ratio_b = row_energy_balance(B_b)
+    row_c, ratio_c = row_energy_balance(B_c)
     print(f"\nPer-row energy balance (max-row-share / uniform-share, uniform=1/24):")
-    print(f"  preset-span basis A:   max/uniform = {ratio_a:.3f}")
-    print(f"  random-control basis B: max/uniform = {ratio_b:.3f}")
+    print(f"  preset-span basis A:          max/uniform = {ratio_a:.3f}")
+    print(f"  random-control basis B:       max/uniform = {ratio_b:.3f}")
+    print(f"  row-matched-random basis C:   max/uniform = {ratio_c:.3f}  "
+          f"(target {ratio_a:.3f}, achieved after {row_match_info['n_iters_used']} "
+          f"iters, max abs per-row deviation {row_match_info['max_abs_dev']:.5f})")
 
-    angles = subspace_angles(B_a.T, B_b.T)  # radians
-    angles_deg = np.degrees(angles)
+    angles_ab = np.degrees(subspace_angles(B_a.T, B_b.T))
+    angles_ac = np.degrees(subspace_angles(B_a.T, B_c.T))
+    angles_bc = np.degrees(subspace_angles(B_b.T, B_c.T))
     print(f"\nPrincipal angles between subspace A (preset-span) and B (random control):")
-    print(f"  min={angles_deg.min():.2f} deg, mean={angles_deg.mean():.2f} deg, "
-          f"max={angles_deg.max():.2f} deg  (90 deg = orthogonal)")
+    print(f"  min={angles_ab.min():.2f} deg, mean={angles_ab.mean():.2f} deg, "
+          f"max={angles_ab.max():.2f} deg  (90 deg = orthogonal)")
+    print(f"Principal angles between subspace A (preset-span) and C (row-matched random):")
+    print(f"  min={angles_ac.min():.2f} deg, mean={angles_ac.mean():.2f} deg, "
+          f"max={angles_ac.max():.2f} deg")
+    print(f"Principal angles between subspace B (random control) and C (row-matched random):")
+    print(f"  min={angles_bc.min():.2f} deg, mean={angles_bc.mean():.2f} deg, "
+          f"max={angles_bc.max():.2f} deg")
 
     geometry = {
         "base_preset": BASE_PRESET,
@@ -223,12 +325,36 @@ def report_geometry(B_a, B_b, P, extras, rank, out_dir):
         "row_energy_balance": {
             "preset_span": {"per_row_mean_fraction": row_a.tolist(), "max_over_uniform": ratio_a},
             "random_control": {"per_row_mean_fraction": row_b.tolist(), "max_over_uniform": ratio_b},
+            "row_matched_random": {
+                "per_row_mean_fraction": row_c.tolist(),
+                "max_over_uniform": ratio_c,
+                "target_max_over_uniform": ratio_a,
+                "n_iters_used": row_match_info["n_iters_used"],
+                "max_abs_per_row_deviation_from_target": row_match_info["max_abs_dev"],
+                "basis_seed": row_match_info["seed"],
+                "note": "achieved match, not the intended one -- re-orthonormalization "
+                        "after each rescale perturbs the profile, so this is a fixed point "
+                        "of iterated rescale+re-orthonormalize, not an exact hit.",
+            },
         },
         "principal_angles_deg": {
-            "min": float(angles_deg.min()),
-            "mean": float(angles_deg.mean()),
-            "max": float(angles_deg.max()),
-            "all": angles_deg.tolist(),
+            "A_vs_B": {
+                "min": float(angles_ab.min()), "mean": float(angles_ab.mean()),
+                "max": float(angles_ab.max()), "all": angles_ab.tolist(),
+            },
+            "A_vs_C": {
+                "min": float(angles_ac.min()), "mean": float(angles_ac.mean()),
+                "max": float(angles_ac.max()), "all": angles_ac.tolist(),
+            },
+            "B_vs_C": {
+                "min": float(angles_bc.min()), "mean": float(angles_bc.mean()),
+                "max": float(angles_bc.max()), "all": angles_bc.tolist(),
+            },
+            # Back-compat top-level keys, unchanged meaning: A vs B only.
+            "min": float(angles_ab.min()),
+            "mean": float(angles_ab.mean()),
+            "max": float(angles_ab.max()),
+            "all": angles_ab.tolist(),
         },
     }
     os.makedirs(out_dir, exist_ok=True)
@@ -325,17 +451,29 @@ def main():
     assert np.allclose(P, P_b), "base point mismatch between condition A and B geometry"
     B_b = B_full_b[:rank]
 
-    for name, B in (("A (preset-span)", B_a), ("B (random control)", B_b)):
+    row_a_target, _ = row_energy_balance(B_a)
+    B_c, row_c_achieved, ratio_c, weights_c, n_iters_c, max_abs_dev_c = build_row_matched_random_basis(
+        base_ttl, rank, row_a_target, BASIS_SEED_C
+    )
+    row_match_info = {
+        "seed": BASIS_SEED_C,
+        "n_iters_used": n_iters_c,
+        "max_abs_dev": max_abs_dev_c,
+        "weights": weights_c.tolist(),
+    }
+
+    for name, B in (("A (preset-span)", B_a), ("B (random control)", B_b),
+                    ("C (row-matched random)", B_c)):
         off_diag_max = float(np.abs(B @ B.T - np.eye(B.shape[0])).max())
         print(f"orthonormality check, basis {name}: max |B B^T - I| = {off_diag_max:.3e}")
         assert off_diag_max < 1e-5, f"basis {name} not orthonormal enough: {off_diag_max}"
 
-    geometry = report_geometry(B_a, B_b, P, extras, rank, out_dir)
+    geometry = report_geometry(B_a, B_b, B_c, P, extras, rank, out_dir, row_match_info)
 
     tts = load_text_to_speech(ONNX_DIR, use_gpu=False)
     sample_rng = np.random.default_rng(SAMPLE_SEED)
 
-    basis_by_cond = {"preset_span": B_a, "random_control": B_b}
+    basis_by_cond = {"preset_span": B_a, "random_control": B_b, "row_matched_random": B_c}
 
     idx_global = 0
     for cond_name in conditions:
@@ -370,15 +508,16 @@ def main():
             "speed_note": (
                 "Rendered at 1.05, NOT this fork's speed=1.0 default, to stay "
                 "comparable with the existing K=4/16/64 ladder rendered at 1.05. "
-                "Both conditions A and B share this, so it cannot bias one "
-                "against the other. See module docstring."
+                "All three conditions (A, B, C) share this, so it cannot bias "
+                "one against the others. See module docstring."
             ),
             "style_dp": f"held fixed at {BASE_PRESET}'s for every sample",
             "synthesis_sample_rate": tts.sample_rate,
             "embed_sample_rate": EMBED_SR,
             "seed_rule": "np.random.seed(SEED_BASE + idx_global) immediately before each synthesis, "
-                         "idx_global shared/continuing across both conditions",
+                         "idx_global shared/continuing across all three conditions",
             "basis_seed_random_control": BASIS_SEED_B,
+            "basis_seed_row_matched_random": BASIS_SEED_C,
             "sample_seed": SAMPLE_SEED,
             "in_subspace_fraction_mean": float(np.mean(fractions)) if fractions else None,
             "in_subspace_fraction_min": float(np.min(fractions)) if fractions else None,
