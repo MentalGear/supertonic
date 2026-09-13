@@ -141,6 +141,32 @@ rather than the whole utterance (whole-utterance distance is dominated by
 frames that carry no instability at all, which is a plausible reason the
 whole-clip medoid picked the wrong seed).
 
+## Corrections to the git record
+
+Two commit messages on this branch state things the data does not support.
+Recorded here because a pushed message cannot be edited without rewriting
+history, and the retraction should be findable from the doc rather than
+only from a later message.
+
+- **`a68dc97`** ("Locate sibilant over-drive, and find the first measure
+  that tracks a listener") says the clean clips "top out at 0.646 and
+  average 0.40", and calls the sibilant-peak ratio the first measure in
+  this project to separate flagged clips from clean ones. The margin is
+  far thinner than that: the highest strict-clean clip, `pool_M4_t4`,
+  scores 0.9587, so the lowest flagged clip beats the highest clean one by
+  0.0164, not by the ~0.33 that figure implied. The three flagged clips do
+  occupy ranks 1-3 of 20, which is worth keeping, but the measure is
+  suggestive rather than validated. The partition it was scored against
+  used 3 flagged and 14 clean of 20 clips and its membership is not the
+  listener's sibilance reports -- one clip they described as having sharp
+  sibilants was rated clean overall, and another whose primary complaint
+  was time compression ranks 8th here.
+- **`f6fe4bc`** ("Real voice directions win, and it is not the row profile
+  doing it") also carries the sibilance corrections above and the record of
+  the de-essing line closing, which its message does not mention. A `git
+  add -A` swept in another change that was in the working tree at the time.
+  The content is correct; only its attribution is misleading.
+
 ## Mitigations
 
 ### Applied, partial evidence: restore the default `speed` to 1.0
