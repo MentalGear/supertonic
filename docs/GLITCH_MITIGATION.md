@@ -274,3 +274,28 @@ the generator, inputs, and full verdict; summary:
   established effect — but every prior artifact measurement in this project
   used M1, so the rates and the mechanism above may both understate what a
   female preset does.
+- **A sibilant-peak ratio** (peak sample amplitude inside sibilant frames
+  over the whole clip's peak, `py/phase2a_sibilance.py`) is suggestive, not
+  validated: the three clips it labels flagged rank 1st-3rd of 20 at
+  0.9751-1.0000, but the margin over the highest strict-clean clip
+  (pool_M4_t4 at 0.9587) is only 0.0164, and the flagged/clean labels are a
+  3-flagged/14-clean partition of the 20 clips (3 excluded), not the
+  listener's own sibilance remarks. Worth recording — three pre-specified
+  clips landing in the top 3 of 20 would be unlikely by chance — but not
+  evidence of a validated detector.
+- **The de-essing direction is closed.** `phase2a_deessing_direction.py`
+  tried to fit a linear `style_ttl` direction against this ratio and halted
+  on a saturated target (see its own history); `phase2a_deessing_decensored.py`
+  retried with a decensored target (sibilant-frame peak over NON-sibilant-frame
+  peak, unbounded above) at an eps sweep of 0.03 / 0.07 / 0.15, 80 draws each,
+  on F3's library sentence. Held-out R^2 came in at -0.029, ~0.000 and ~0.000
+  against a threshold of 0.10 fixed in advance — the target does vary (spreads
+  of 0.63 to 1.92 across the sweep), so this is not a censoring artifact the
+  second time. The measure was not the bottleneck either: 67-79% of draws
+  saturate the *original* measure even at eps=0.03, so saturation was never
+  about perturbation size — F3's sibilant sits near the clip's global peak at
+  baseline almost regardless of direction. Conclusion: the sibilant ratio is
+  not linearly recoverable from tangent-space style coefficients. A
+  non-linear model was deliberately not attempted, and the threshold was not
+  lowered after the numbers were seen. This line of attack on de-essing is
+  closed.

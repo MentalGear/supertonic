@@ -1,10 +1,17 @@
 """Phase 2a -- is sibilant over-drive controllable through `style_ttl`, and if
 so, is there a de-essing direction?
 
-`phase2a_sibilance.py` established the one validated measure of the artifact:
-the ratio of peak sample amplitude inside sibilant frames to the whole clip's
-peak (flagged clips 0.975-1.000, clean clips top out at 0.646). This script
-reuses that measure exactly (`phase2a_sibilance.analyze_clip`, unmodified) and
+`phase2a_sibilance.py` computed a suggestive, not validated, measure of the
+artifact: the ratio of peak sample amplitude inside sibilant frames to the
+whole clip's peak. The three clips it labels flagged do rank 1st-3rd of 20 at
+0.9751-1.0000, but the margin is thin, not a clean separation: the highest
+strict-clean clip (pool_M4_t4) scores 0.9587, so flagged-min beats clean-max
+by only 0.0164, not the ~0.33 gap "clean clips top out at 0.646" implied. The
+flagged/clean labels are also not the listener's own sibilance remarks --
+they are a 3-flagged/14-clean partition of the 20 clips (3 excluded), and at
+least one clip with a sibilance remark (clip07, rated clean overall) falls
+outside the flagged set. This script reuses that measure exactly
+(`phase2a_sibilance.analyze_clip`, unmodified) and
 asks whether it moves under `style_ttl` perturbation, and if so, whether a
 ridge-fitted linear direction can lower it without turning the preset into a
 different speaker.
