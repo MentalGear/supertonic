@@ -577,3 +577,42 @@ exist locally.
   sample; the human recordings are 48 kHz studio captures against 44.1 kHz
   engine output, so audio-quality cues may colour judgements independent of
   language; and it remains one listener throughout.
+
+## 12. Phase 2a — De-esser fix check
+
+- **Artifact:** https://claude.ai/artifact/N88bDxwELraZh5WUffQMus
+- **Contains:** clips comparing a band-split de-esser targeting the 4-11 kHz
+  sibilant band (intended -4.4 dB reduction) against untreated originals and
+  clean-preset controls, blind, asking whether the 's' sounds over-driven. A
+  measured check confirms the de-esser hit its target (-4.29 dB measured
+  against -4.44 dB intended).
+- **Generator:** `py/benches/phase2a_deess_fix_bench.py`
+- **Verdict:** the de-esser works as designed but does not change the
+  percept — de-essed clips produced verdicts identical to the untreated
+  originals ("yes, clearly"), while clean controls in the same set read
+  "no." Band de-essing at ~4.4 dB is not a fix.
+
+## 13. Phase 2a — Sibilance duration and attenuation sweep
+
+- **Artifact:** https://claude.ai/artifact/Wefwnbeh5CYnTdEBKUtU5J
+- **Contains:** twelve clips, blind and level-matched, across two sentences
+  (library, seashells), each with an untreated-original anchor, a
+  clean-preset control, and four interventions: latent-frame attenuation hard
+  (~-10 dB), fricative shortening at 0.8x and 0.7x, and shortening 0.7x
+  combined with attenuation 0.6x. Each clip asks the open question whether
+  the 's' sounds over-driven.
+- **Generator:** `py/benches/phase2a_sibilance_duration_bench.py`
+- **Verdict:** the library sentence's anchors behaved (untreated "yes,
+  clearly", clean control "no") and all four interventions on it still read
+  "yes, clearly" — none moved the verdict, though the hard-attenuation clip
+  drew the free-text note "less than previous," the only condition to
+  register any change. The seashells sentence's anchors inverted (clean
+  control "maybe", untreated "no" despite being bit-identical, correlation
+  1.000000, to a clip the same listener called "yes, clearly" in benches 7
+  and 11), so that half is discarded as uninterpretable rather than read as a
+  null result. All three shortening conditions on seashells also drew the
+  free-text note "At the end windgust sound" — the phase-vocoder smearing
+  predicted in advance — on none of the unshortened clips. See the closing
+  section of `docs/GLITCH_MITIGATION.md`'s sibilance thread for the full
+  read of this bench, including the anchor-inversion finding about the
+  listening instrument itself.

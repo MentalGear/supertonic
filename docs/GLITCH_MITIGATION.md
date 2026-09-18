@@ -14,8 +14,10 @@ end-of-utterance artifact (see item 5 under "Proposed, not established"),
 and bench 10 is the open-frame re-test that closes bench 8's outstanding
 woodchuck row and confirms the compression finding on a second sentence.
 Bench 11 asked whether sibilant over-drive is specific to this fork's
-presets or a wider property, mixing in upstream's own showcase audio — see
-"Sibilant over-drive" below for what it did and did not settle.
+presets or a wider property, mixing in upstream's own showcase audio; benches
+12 and 13 then tested fixes (de-essing, latent attenuation, fricative
+shortening) rather than causes. See "Sibilant over-drive" below, now closed
+as an open question rather than a solved one.
 
 ## The finding
 
@@ -428,3 +430,85 @@ one that does not:
   non-linear model was deliberately not attempted, and the threshold was not
   lowered after the numbers were seen. This line of attack on de-essing is
   closed.
+
+### Sibilant over-drive: closed as a well-investigated open question (benches 12-13, 2026-09-18)
+
+Two further benches tested fixes rather than causes, since the linear
+de-essing direction above was closed without a working intervention. Bench 12
+([LISTENING_BENCHES.md](LISTENING_BENCHES.md#12-phase-2a--de-esser-fix-check))
+verified a band-split de-esser targeting the 4-11 kHz band hit its intended
+reduction (-4.29 dB measured against -4.44 dB intended) and then found it made
+no difference to the verdict: de-essed clips read identically to untreated
+originals ("yes, clearly"), while clean controls in the same set read "no."
+
+Bench 13
+([LISTENING_BENCHES.md](LISTENING_BENCHES.md#13-phase-2a--sibilance-duration-and-attenuation-sweep))
+tried four more interventions against untreated-original and clean-control
+anchors, on two sentences, blind and level-matched: latent-frame attenuation
+hard (~-10 dB, harder than bench 12's de-esser), fricative shortening at two
+factors (0.8x, 0.7x), and shortening combined with attenuation. Only the
+library sentence's anchors behaved (untreated "yes, clearly", clean control
+"no"); the seashells sentence's anchors inverted (clean control "maybe",
+untreated "no" — despite that untreated clip being bit-identical, waveform
+correlation 1.000000, to a clip the same listener called "yes, clearly" in
+benches 7 and 11), so that half is discarded as uninterpretable rather than
+read as a null result.
+
+On the half that stayed interpretable:
+
+1. **All four interventions failed.** Latent-frame attenuation, fricative
+   shortening at both factors, and shortening combined with attenuation all
+   still read "yes, clearly" on the library sentence — none moved the
+   verdict off the untreated baseline. Combined with bench 12, that is five
+   distinct mitigation attempts (soft de-essing, hard attenuation, two
+   shortening factors, shortening-plus-attenuation) that have now failed.
+2. **Harder attenuation gave partial relief without closing the gap.** The
+   ~-10 dB condition was still "yes, clearly" but drew the free-text note
+   "less than previous" — the only condition to register any change at all.
+   So sibilant-band energy contributes to the percept without being the
+   whole mechanism: if it were, -10 dB would have closed it.
+3. **Shortening trades one artifact for another.** All three shortening
+   conditions on the seashells sentence — and none of the unshortened ones —
+   drew the free-text note "At the end windgust sound," the phase-vocoder
+   smearing predicted in advance and flagged to the listener to watch for.
+   A fix that trades harshness for a wind gust is not a fix.
+4. **The listening instrument itself drifted between contexts, and this
+   matters more than any single verdict above.** After reproducing their own
+   sibilance judgements blind, independently, four separate times (bench 7,
+   bench 10, and both readings in bench 11), the fifth reproduction attempt
+   inverted: a clip bit-identical to one flagged "yes, clearly" twice before
+   read "no, sounds clean" in bench 13's seashells group, while that same
+   group's clean control read "maybe." This is recorded without blame — it
+   is a fact about listening tests across thirteen benches' worth of
+   sessions, not a fact about the listener — but the consequence is real:
+   this project's primary instrument is the listener, four automated
+   measures were already discarded (benches 6-9) for disagreeing with that
+   instrument, and the instrument itself is now known to drift between
+   sessions. Future benches should place a known-bad and a known-clean
+   anchor in *every* group, not just somewhere in the bench, so drift is
+   caught within the group it would corrupt rather than noticed later by
+   cross-referencing other benches; a group whose anchors invert should be
+   discarded, not interpreted — exactly what was done with bench 13's
+   seashells half here.
+
+**Closing this thread.** Thirteen benches and five mitigation attempts in,
+here is what is established: the artifact is real, and reproducible across
+listening sessions in the clear majority of trials; it is present in
+upstream's own English synthesis, on voices and text unrelated to any of this
+fork's presets, so it is not something this fork introduced (bench 11); the
+engine's baseline audible-artifact rate is roughly 6% of stock renders
+(bench 7); flagged clips hold fricatives about 50% longer than clean-preset
+clips on identical text, with more relative 4-11 kHz energy and softer
+onsets (`bench7_pool_reproduction`, `py/results/phase2a/sibilance_latent.json`);
+and none of latent-frame attenuation (soft or hard), band-split de-essing, or
+fricative time compression removes it, singly or in combination. What is not
+established, and is not resolved by anything above: whether the artifact is
+an engine defect or a characteristic some voices simply have. Answering that
+needs matched-language, matched-speaker material — the same speaker's
+recorded and synthesised voice, in English, with sibilant content — which
+does not exist in the assets available to this project (bench 11). Absent
+that material, this thread is closed here as a well-investigated open
+question, not a solved one: twelve automated measures and five mitigation
+attempts have all failed, either to separate the artifact from clean speech
+or to remove it, and the one comparison that could settle its cause is not
+currently buildable from assets on hand.

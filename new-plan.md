@@ -1218,6 +1218,24 @@ and the revised sibilance section of
 including a fourth bench-design lesson (check clip language against the
 listener's own before asking about phonetic detail).
 
+**Update (benches 12-13, 2026-09-18): the sibilant over-drive thread is now
+closed.** Two more benches tried fixes — a band-split de-esser (bench 12,
+verified working at -4.29 dB, no effect on the verdict) and four more
+interventions: latent-frame attenuation (soft and hard), fricative
+shortening, and shortening combined with attenuation (bench 13) — all failed
+on the half of bench 13 whose anchors behaved; the other half's anchors
+inverted and was discarded as uninterpretable. See the closing section of
+[GLITCH_MITIGATION.md](docs/GLITCH_MITIGATION.md#sibilant-over-drive-closed-as-a-well-investigated-open-question-benches-12-13-2026-09-18)
+for the full record, including a finding that matters beyond this thread: the
+listener's own judgements inverted on one bench group after four prior
+sessions of reproducing themselves exactly, so future benches need a
+known-bad and a known-clean anchor in every group, not just somewhere in the
+bench. Status: closed as an open question, not a solved one — the artifact is
+real, characterised, and unfixed by five attempts, and the comparison that
+could settle engine-defect-vs-voice-characteristic needs assets this project
+does not have. **The sibilance/glitch-mitigation line of work is done for
+now; Phase 3 (below) and the VCTK extraction are the live work.**
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?
