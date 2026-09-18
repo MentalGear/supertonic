@@ -457,3 +457,59 @@ test('sampleNoisyLatent: two unseeded calls differ', () => {
     const b = drawLatent(tts, duration, null);
     assert.notDeepStrictEqual(a.xt, b.xt);
 });
+
+// --- per-chunk seed derivation in TextToSpeech.call ----------------------
+//
+// `call()` chunks long text and loops over `_infer`. It must derive a
+// distinct seed per chunk (`seed + index`), not pass the raw `seed` to every
+// chunk. These tests stub `_infer` so they exercise only the chunking/
+// seed-derivation loop, not the full ONNX pipeline.
+
+const LONG_TEXT = 'First sentence.\n\nSecond sentence.'; // -> two chunks, one per paragraph
+
+function dummyStyle() {
+    // call() only checks style.ttl.dims[0] === 1 before chunking; _infer
+    // itself is stubbed below so nothing else touches style.
+    return new Style(
+        new Tensor('float32', new Float32Array(TTL_ROWS * TTL_COLS), [1, TTL_ROWS, TTL_COLS]),
+        new Tensor('float32', new Float32Array(DP_ROWS * DP_COLS), [1, DP_ROWS, DP_COLS])
+    );
+}
+
+function makeRecordingTts(seedsSeen) {
+    const tts = makeTts();
+    tts._infer = async (textList, langList, style, totalStep, speed, progressCallback, seed) => {
+        seedsSeen.push(seed);
+        return { wav: [0, 0, 0, 0], duration: [1.0] };
+    };
+    return tts;
+}
+
+test('call: chunks receive distinct derived seeds', async () => {
+    const seedsSeen = [];
+    const tts = makeRecordingTts(seedsSeen);
+    await tts.call(LONG_TEXT, 'en', dummyStyle(), 1, 1.0, 0.3, null, 100);
+    assert.deepStrictEqual(seedsSeen, [100, 101]);
+});
+
+test('call: same user seed twice gives identical per-chunk seeds', async () => {
+    const seedsA = [];
+    const seedsB = [];
+    await makeRecordingTts(seedsA).call(LONG_TEXT, 'en', dummyStyle(), 1, 1.0, 0.3, null, 7);
+    await makeRecordingTts(seedsB).call(LONG_TEXT, 'en', dummyStyle(), 1, 1.0, 0.3, null, 7);
+    assert.deepStrictEqual(seedsA, seedsB);
+});
+
+test('call: single-chunk seed is unchanged (chunk 0 gets the raw seed)', async () => {
+    const seedsSeen = [];
+    const tts = makeRecordingTts(seedsSeen);
+    await tts.call('Short text.', 'en', dummyStyle(), 1, 1.0, 0.3, null, 42);
+    assert.deepStrictEqual(seedsSeen, [42]);
+});
+
+test('call: unseeded multi-chunk render stays unseeded for every chunk', async () => {
+    const seedsSeen = [];
+    const tts = makeRecordingTts(seedsSeen);
+    await tts.call(LONG_TEXT, 'en', dummyStyle(), 1, 1.0, 0.3, null);
+    assert.deepStrictEqual(seedsSeen, [null, null]);
+});

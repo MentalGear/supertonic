@@ -458,7 +458,13 @@ export class TextToSpeech {
         let durCat = 0;
 
         for (let i = 0; i < textList.length; i++) {
-            const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback, seed);
+            // Derive a per-chunk seed via `seed + index` -- see the matching
+            // comment in py/helper.py's __call__. Same rule in both files, so
+            // the same user seed and text give identical audio end to end,
+            // while distinct chunks within one render draw independent noise.
+            // Untouched when seed is null/undefined (unseeded rendering).
+            const chunkSeed = (seed === null || seed === undefined) ? null : seed + i;
+            const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback, chunkSeed);
             
             if (wavCat.length === 0) {
                 wavCat = wav;

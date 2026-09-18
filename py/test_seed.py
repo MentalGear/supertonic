@@ -132,5 +132,73 @@ class UnseededDrawUnchangedTest(unittest.TestCase):
         self.assertFalse(np.array_equal(a, b))
 
 
+class MultiChunkSeedDerivationTest(unittest.TestCase):
+    """`__call__` chunks long text and must derive a distinct per-chunk seed
+    (`seed + chunk_index`) rather than passing the same seed to every chunk's
+    `_infer` call. These tests stub `_infer` so they exercise only the
+    chunking/seed-derivation loop, not the full ONNX pipeline."""
+
+    LONG_TEXT = "First sentence.\n\nSecond sentence."  # -> two chunks, one per paragraph
+
+    @staticmethod
+    def dummy_style():
+        # __call__ only checks style.ttl.shape[0] == 1 before chunking;
+        # _infer itself is stubbed out below so nothing else touches style.
+        return types.SimpleNamespace(ttl=np.zeros((1, 50, 256), dtype=np.float32))
+
+    def make_recording_tts(self, seeds_seen):
+        tts = make_tts()
+
+        def fake_infer(text_list, lang_list, style, total_step, speed, seed=None):
+            seeds_seen.append(seed)
+            return np.zeros((1, 4), dtype=np.float32), np.array([1.0])
+
+        tts._infer = fake_infer
+        return tts
+
+    def assert_two_chunks(self, text_list):
+        # Sanity check the fixture actually produces >1 chunk; otherwise the
+        # test below would pass vacuously.
+        from helper import chunk_text
+
+        self.assertEqual(len(chunk_text(text_list, max_len=300)), 2)
+
+    def test_chunks_receive_distinct_derived_seeds(self):
+        self.assert_two_chunks(self.LONG_TEXT)
+        seeds_seen = []
+        tts = self.make_recording_tts(seeds_seen)
+        tts(self.LONG_TEXT, "en", style=self.dummy_style(), total_step=1, seed=100)
+        self.assertEqual(seeds_seen, [100, 101])
+
+    def test_same_user_seed_twice_gives_identical_per_chunk_seeds(self):
+        """Same user seed + same text -> same per-chunk seeds every time,
+        which is what makes the end-to-end audio reproducible."""
+        self.assert_two_chunks(self.LONG_TEXT)
+        seeds_a, seeds_b = [], []
+        self.make_recording_tts(seeds_a)(
+            self.LONG_TEXT, "en", style=self.dummy_style(), total_step=1, seed=7
+        )
+        self.make_recording_tts(seeds_b)(
+            self.LONG_TEXT, "en", style=self.dummy_style(), total_step=1, seed=7
+        )
+        self.assertEqual(seeds_a, seeds_b)
+
+    def test_single_chunk_seed_unchanged(self):
+        """A single-chunk render must still receive the raw seed unchanged
+        (chunk_index 0 -> seed + 0 == seed): existing single-chunk callers
+        see identical behaviour to before this change."""
+        seeds_seen = []
+        tts = self.make_recording_tts(seeds_seen)
+        tts("Short text.", "en", style=self.dummy_style(), total_step=1, seed=42)
+        self.assertEqual(seeds_seen, [42])
+
+    def test_unseeded_multi_chunk_stays_none(self):
+        self.assert_two_chunks(self.LONG_TEXT)
+        seeds_seen = []
+        tts = self.make_recording_tts(seeds_seen)
+        tts(self.LONG_TEXT, "en", style=self.dummy_style(), total_step=1)
+        self.assertEqual(seeds_seen, [None, None])
+
+
 if __name__ == "__main__":
     unittest.main()

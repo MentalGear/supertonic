@@ -399,9 +399,21 @@ class TextToSpeech:
         text_list = chunk_text(text, max_len=max_len)
         wav_cat = None
         dur_cat = None
-        for text in text_list:
+        for chunk_index, text in enumerate(text_list):
+            # Each chunk gets its own generator seeded from (seed, chunk_index)
+            # rather than the raw `seed` value, so two chunks that happen to
+            # produce equal-length latents don't draw identical noise. Plain
+            # addition is enough: it's deterministic (same seed + same text ->
+            # same per-chunk seeds -> same audio end to end), and every index
+            # in one render is unique so every chunk gets a distinct seed.
+            # `seed=None` is left untouched -- unseeded rendering is unaffected.
+            # The JS mirror in web/helper.js uses this same `seed + index` rule
+            # so the two implementations stay conceptually aligned (their PRNG
+            # streams still don't and can't match numerically, per the note in
+            # sample_noisy_latent).
+            chunk_seed = None if seed is None else seed + chunk_index
             wav, dur_onnx = self._infer(
-                [text], [lang], style, total_step, speed, seed=seed
+                [text], [lang], style, total_step, speed, seed=chunk_seed
             )
             if wav_cat is None:
                 wav_cat = wav
