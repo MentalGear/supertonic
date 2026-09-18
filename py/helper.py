@@ -313,7 +313,7 @@ class TextToSpeech:
         lang_list: list[str],
         style: Style,
         total_step: int,
-        speed: float = 1.05,
+        speed: float = 1.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         assert (
             len(text_list) == style.ttl.shape[0]
@@ -353,7 +353,7 @@ class TextToSpeech:
         lang: str,
         style: Style,
         total_step: int,
-        speed: float = 1.05,
+        speed: float = 1.0,
         silence_duration: float = 0.3,
     ) -> tuple[np.ndarray, np.ndarray]:
         assert (
@@ -382,7 +382,7 @@ class TextToSpeech:
         lang_list: list[str],
         style: Style,
         total_step: int,
-        speed: float = 1.05,
+        speed: float = 1.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         return self._infer(text_list, lang_list, style, total_step, speed)
 

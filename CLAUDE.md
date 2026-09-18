@@ -64,6 +64,13 @@ inline burns the context the main loop needs for judgment.
   `vector_estimator`, and only `text_mask`/`latent_mask` cross the boundary.
   Rate and rhythm control, if it is reachable at all, has to come through
   `style_ttl`.
+- **This fork's `speed` default is `1.0`, not upstream's `1.05`, on purpose.**
+  `1.05` divides the duration predictor's own trained estimate on every
+  default render, a change upstream introduced with the parameter itself
+  (commit `8518b839`) and never explained. `1.0` restores the model's own
+  prediction; pass `speed=1.05` for upstream's behaviour. See
+  [docs/GLITCH_MITIGATION.md](docs/GLITCH_MITIGATION.md) for the (partial)
+  listening evidence. Do not "fix" this back to `1.05` by syncing upstream.
 - **Style blending lives in `py/helper.py` (`Style`) and `web/helper.js`.**
   Changes to blending semantics must land in both — the browser path is not
   generated from the Python one, and the two silently diverged once already
@@ -86,6 +93,20 @@ inline burns the context the main loop needs for judgment.
   `python3 -m unittest discover -s py -p "test_*.py"`.
 - **Do not commit ignored assets**: ONNX models, recordings, extracted style
   JSONs, generated WAVs.
+- **Ask listeners what they hear, not whether a known artifact persists.** A
+  bench that asks "is the artifact you flagged before still present in this
+  clip?" primes the listener to re-identify a description rather than report
+  a fresh perception — and can suppress a real detection. Measured directly:
+  bench 8 asked that leading question of a woodchuck clip and got "no" at
+  every speed; the same clip, verified bit-identical (waveform correlation
+  1.00000000), was played blind in bench 7 under the open question "do you
+  hear an audible artifact in this clip?" and came back "yes, clearly, chuck
+  too condensed" — seven minutes later, on the same audio. Prefer the open
+  question and let the listener describe what they hear unprompted; a
+  leading question is a legitimate follow-up once, never the first ask. This
+  sits alongside the "make the listening task explicit" bullet below: be
+  explicit about the TASK the listener is doing, never about the answer you
+  expect.
 - **Vocoder sampling is unseeded.** `sample_noisy_latent()` in `py/helper.py`
   draws `np.random.randn` with no seed, so rendering the same style tensor twice
   gives audibly different waveforms. Any "is this the same as before" check must
@@ -129,6 +150,19 @@ inline burns the context the main loop needs for judgment.
   mechanism that produced it: a clip labelled "reads no audio at all"
   (describing the predictor) was reasonably misread as describing the clip,
   which is obviously synthesized speech.
+- **A bench's forced-choice options must span the answer space, and the
+  free-text field is what catches it when they don't.** Bench 9 offered four
+  options — different voice clean / same voice wrong / different voice AND
+  wrong / no difference — with no neutral "different but fine" box, so all
+  ten listener verdicts were forced into "same voice with something wrong in
+  it" even though every free-text note said nothing was wrong, and several
+  said the perturbed clip was better than the reference. The real verdict
+  only survived because free text was there to contradict the forced
+  choice. Before publishing, enumerate the answers a listener could
+  plausibly have — including "different but fine" — and never ship a bench
+  whose options lack a neutral-difference choice. This sits alongside the
+  bullets above on asking the open question and on describing what the
+  listener hears, not the mechanism.
 - **Compare spectrograms before you compare aggregates.** A scalar summary —
   median F0, mean spectral flatness, voiced fraction, WER — collapses both time
   and frequency, so a change that is localized in time (per-word emphasis) or
@@ -159,4 +193,22 @@ inline burns the context the main loop needs for judgment.
   known-same and known-different pairs; if those two distributions overlap,
   the distance cannot support the claim.** A threshold derived from a single
   pair is not a calibration.
+- **An estimator's expressive ceiling must be checked out of sample — an
+  in-sample headroom statistic is a function of matrix shape, not content,
+  and will certify any design.** Same failure mode as the bullet above — an
+  uncalibrated instrument mistaken for a fact about the world — but here the
+  check itself, not its absence, was the problem. Phase 2b did compute a
+  ceiling before reading its within-family residual null: participation
+  ratio (~303) and the fraction of residual variance inside the top-n_train
+  principal components (~0.82, `var_in_top_k`, `phase2b_wavlm.py`), read
+  together as 82% headroom. Both choose their subspace from the same data
+  they score, and `py/phase2a_ceiling_null.py` reproduces both numbers to
+  four significant figures by running the identical diagnostics on pure
+  isotropic noise — they measure (n, d, n_train) alone. What actually binds a
+  ridge is out-of-sample: predictions lie in the training targets' span, so a
+  fresh direction reaches only about n_train/d (here 3.9%, matching the
+  noise sim and Phase 2b's own reachable fraction, and consistent with the
+  oracle's ~2.6% R^2 ceiling under the probe's own scoring). Operational
+  test: run the diagnostic on noise of the same shape — if it returns the
+  same number, it is measuring the shape.
 - Active research direction: [new-plan.md](new-plan.md).

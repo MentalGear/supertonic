@@ -313,7 +313,7 @@ export class TextToSpeech {
         this.sampleRate = cfgs.ae.sample_rate;
     }
 
-    async _infer(textList, langList, style, totalStep, speed = 1.05, progressCallback = null) {
+    async _infer(textList, langList, style, totalStep, speed = 1.0, progressCallback = null) {
         const bsz = textList.length;
         
         // Process text
@@ -422,7 +422,7 @@ export class TextToSpeech {
         return { wav, duration };
     }
 
-    async call(text, lang, style, totalStep, speed = 1.05, silenceDuration = 0.3, progressCallback = null) {
+    async call(text, lang, style, totalStep, speed = 1.0, silenceDuration = 0.3, progressCallback = null) {
         if (style.ttl.dims[0] !== 1) {
             throw new Error('Single speaker text to speech only supports single style');
         }
@@ -449,7 +449,7 @@ export class TextToSpeech {
         return { wav: wavCat, duration: [durCat] };
     }
 
-    async batch(textList, langList, style, totalStep, speed = 1.05, progressCallback = null) {
+    async batch(textList, langList, style, totalStep, speed = 1.0, progressCallback = null) {
         return await this._infer(textList, langList, style, totalStep, speed, progressCallback);
     }
 

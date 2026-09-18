@@ -2,6 +2,20 @@
 
 ## This is a FORK that adds: style changes ability for voices, including emotions.
 
+> **Fork-specific change — default `speed` restored to `1.0`.** Upstream's
+> `speed` parameter defaults to `1.05`, which divides the duration
+> predictor's own trained time estimate (`dur_onnx = dur_onnx / speed`),
+> making every default render 4.76% faster than the model's own prediction —
+> and faster than every render before upstream added the parameter on
+> 2025-11-19, with no rationale recorded for the value. This fork defaults to
+> `speed=1.0` instead, in both `py/helper.py` and `web/helper.js`, so the
+> default matches what the model itself predicts. A supporting (not
+> conclusive) listening test found a compression-sounding artifact on stock
+> output at `1.05` that was absent at `1.0`/`0.90` on one test sentence; see
+> [docs/GLITCH_MITIGATION.md](docs/GLITCH_MITIGATION.md) for the full
+> evidence and its limits. The parameter itself is unchanged — pass
+> `speed=1.05` explicitly to get the old upstream behaviour back.
+
 <p align="center">
   <img src="img/Supertonic3_HeroImage.png" alt="Supertonic 3 Banner">
 </p>

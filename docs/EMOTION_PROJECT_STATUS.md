@@ -199,8 +199,10 @@ without listening; the distance metric (mean |Δ log-STFT|) saturates, so its
 voice pair, only the active/inactive split spans all ten presets. Full numbers
 are in [new-plan.md](../new-plan.md) under Phase 0.
 
-**Phase 2b has been run for both ECAPA and WavLM, came back negative, and is
-closed (2026-09-09).**
+**Phase 2b has been run for both ECAPA and WavLM (2026-09-09). The
+between-preset (base-voice) result stands; the within-family residual null —
+"audio does not carry the perturbation" — is downgraded to inconclusive, not
+closed negative. See the correction below the WavLM section.**
 Phase 2 as written was blocked here — its optimizer is external and there is no
 corpus or GPU on this machine — but the engine is its own paired-data generator,
 so synthesizing from known styles gives ground-truth `(audio, style)` pairs. The
@@ -393,6 +395,49 @@ averaged over several utterances of the same speaker should beat a
 single-utterance one — worth trying early in 2a. Full derivation in
 new-plan.md under Phase 2b.
 
+**Correction (`py/phase2a_ceiling_audit.py`, `py/phase2a_ceiling_null.py`,
+2026-09-09): the within-family residual null was underpowered by
+construction, and the underpowering evaded the ceiling check Phase 2b
+actually ran.** Phase 2b did check whether its design had room to succeed,
+with two diagnostics computed on the residual itself (`var_in_top_k`,
+`py/phase2b_wavlm.py:70`, called at lines 278-281): the participation ratio,
+~303 per eps condition (303.20 / 303.30 / 303.15 / 302.78 / 298.17), and the
+fraction of residual variance inside its top-n_train principal components,
+~0.82 (0.8225 / 0.8222 / 0.8225 / 0.8228 / 0.8247) — read together, 82%
+headroom, which is why a measured R^2 near zero was taken as a fact about
+audio. Both diagnostics are in-sample: they ask how much variance an
+optimally-chosen k-dim subspace captures, choosing that subspace from the
+same data being scored. `phase2a_ceiling_null.py` runs the identical
+diagnostics, at the identical shape (n=320, d=6144, n_train=240, 16 seeds),
+on pure isotropic Gaussian noise — data with nothing predictable in it — and
+reproduces both reported numbers to four significant figures: participation
+ratio 303.17 ± 0.06, in-sample top-240-PC variance 0.8225 ± 0.0002. They are
+functions of (n, d, n_train), not of content, and will certify any design.
+A ridge cannot choose its subspace that way: its predictions are an affine
+combination of the *training* targets, confined to a subspace of dimension
+at most n_train, so a fresh test direction is reachable only to about
+n_train/d — on the noise simulation, 0.0392 ± 0.0003, matching the analytic
+n_train/d = 0.0391 and Phase 2b's own measured reachable fractions of
+0.0385 / 0.0379 / 0.0384. Scoring the oracle (test targets projected onto the
+training row space) with the same `phase2b_probe.evaluate()` that produced
+the null gives a ceiling of 0.0264 / 0.0258 / 0.0237 / 0.0197 / 0.0133 R^2 at
+eps 0.05 / 0.10 / 0.20 / 0.40 / 0.80, against achieved values of -0.0136 to
+-0.0298 (best over ECAPA/WavLM x linear/kernel ridge) — every achieved value
+sits below its ceiling, as a valid bound requires.
+**The within-family residual null is downgraded from closed-negative to
+inconclusive: the design lacked the power to detect an effect of any size up
+to ~2.6% R^2.** This is not "audio does carry the perturbation" — it is "we
+do not know; the experiment could not have told us either way." It does not
+touch the between-preset result, which the calibrated speaker-similarity
+bench (bench 5) verified independently of the ridge probe. One number
+correction for the record: an earlier pass reported the reachable fraction
+rising to 12.4% at eps 0.80, which read as a real effect; with proper
+per-base-preset centering (rather than the global train mean) it is flat at
+3.8% — the apparent rise reflected base-voice structure leaking through the
+global mean, not perturbation recovery. Full derivation, the design
+consequence for 2a, and the new subspace-ladder corpus are in
+[new-plan.md](../new-plan.md) under Phase 2.
+
 Caveats: one base, one sentence, so the dimensionality figures are
 per-(base, sentence); at eps 0.20 the emphasis profile sits near the
 vocoder-nuisance floor and is weakly identifiable, but the log-mel diff map is
@@ -453,10 +498,47 @@ were not measured at all. Check any other preset before relying on it:
 np.linalg.norm(style.ttl, axis=-1)   # expect all ~1.0
 ```
 
+**Phase 2a result (2026-09-09): audio does carry the style perturbation, and
+no capacity ceiling is visible through a 64-dimensional subspace.** The 2b
+probe was rank-starved (n_train=240 against a 6,120-dim target, see
+correction above); the subspace ladder shrinks the target to K in
+{4, 16, 64} so `n_train` meets or exceeds it. Same engine, same WavLM
+features (layers 3-5, mean+std), same ridge estimator as 2b — only the
+target size changes. Results, at eps=0.20, fixed base preset M1:
+
+| K | n_train | oracle ceiling | achieved mean R² | shuffled | loudness |
+|---|---|---|---|---|---|
+| 4 | 240 | 1.0000 | 0.912 | −0.002 | 0.023 |
+| 16 | 240 | 1.0000 | 0.608 | −0.016 | −0.004 |
+| 64 | 480 | 1.0000 | 0.232 | −0.008 | −0.003 |
+
+The oracle ceiling of 1.0 at every K — checked out-of-sample, not assumed —
+is the diagnostic 2b's design lacked, and it confirms this design has the
+power to detect recovery. Recovery is real (shuffled and loudness controls
+sit at noise level) and uniform across components, not carried by a few. An
+amplitude-matched control (holding per-direction perturbation amplitude
+fixed instead of total energy) gives a nearly flat 0.297 / 0.199 / 0.232
+across K=4/16/64, against the fixed-energy 0.912/0.608/0.232 — most of the
+fixed-energy decline was per-direction signal-to-noise, not a hard ceiling
+on dimensionality. A separate n_train sweep (`py/phase2a_scaling.py`) finds
+K=64 still rising steeply at n_train=480 with no sign of saturation, so a
+larger corpus (~8,000 renders, sized for the full 6,144-dim target) is worth
+generating; that fit moves to a GPU/Colab session
+(`docs/phase2a_scaling_colab.ipynb`, in progress). Full tables, the
+amplitude-matched control, the scaling sweep, and the refinement-graph
+feasibility check (all four ONNX models convert under `onnx2torch`;
+gradients reach `style_ttl` on 12,800/12,800 elements) are in
+[new-plan.md](../new-plan.md) under Phase 2a. **Established: `style_ttl`
+perturbations are recoverable from audio up to at least a 64-dimensional
+subspace. Not established: any specific capacity number for the full
+12,800-dimensional tensor** — that is what the next, larger corpus is for.
+
 **Next action: Phase 2a — it is the only remaining route.** Phase 0 passed, its
 companion probe is done, Phase 1's composition work already landed with
-`with_deltas()` (1a is verified above), and Phase 2b is closed negative on both
-ECAPA and WavLM. What is left is 2a, the direct `audio -> style_ttl` encoder on
+`with_deltas()` (1a is verified above), and Phase 2b's between-preset result
+stands on both ECAPA and WavLM while its within-family residual null is
+inconclusive, not closed (see correction above). What is left is 2a, the
+direct `audio -> style_ttl` encoder on
 generated pairs. Two things bound it, and they pull in opposite directions.
 Nothing bounds it from the audio side: the perturbation is audible, and a
 prosody-bearing input does read more of it, so feed 2a WavLM-class features
@@ -530,3 +612,7 @@ this one; this roadmap's phase order is superseded.
 - A single-speaker delta should not be presented as a general emotion model.
 - Tags must be parsed before the existing text normalizer, which strips square
   brackets into spaces.
+- Supertonic produces audible glitches on stock, unperturbed output — the
+  unseeded vocoder, not style, is the source. See
+  [GLITCH_MITIGATION.md](GLITCH_MITIGATION.md) for what was measured, what
+  detector attempts failed, and the proposed (untested) mitigations.

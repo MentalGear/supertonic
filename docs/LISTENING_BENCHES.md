@@ -123,3 +123,272 @@ exist locally.
   the tensor we constructed and rendered from, not a recorded human, and the
   held-out identities are shipped presets withheld from probe training, not
   held-out people.
+
+## 6. Phase 2a — Capacity
+
+- **Artifact:** https://claude.ai/code/artifact/624b138d-b490-40ea-9a07-90f5776517ed
+- **Contains:** what Phase 2a's R&sup2; ladder (0.912 / 0.608 / 0.232 at
+  K=4/16/64, eps=0.20) sounds like: for each K, the best/typical/worst
+  test-split sample by per-sample R&sup2;, each rendered as a level-matched,
+  seed-matched triple — true style, probe prediction (base + predicted c @
+  B[:K], `unit_rows`), and the unperturbed base preset as the "recovered
+  nothing" control. Also the achieved-R&sup2;/oracle-ceiling/shuffled-control/
+  loudness-control table per K, and the amplitude-matched control result
+  (K=4/eps0.05 R&sup2;=0.297, K=16/eps0.10 R&sup2;=0.199, K=64/eps0.20
+  R&sup2;=0.232) showing the K-decline is largely a per-direction-amplitude
+  effect rather than a hard dimensional ceiling.
+- **Generator:** `py/benches/phase2a_capacity_bench.py` — unlike most other
+  generators here, this one also re-fits the ridge probe and renders the
+  audio itself (reusing `phase2b_subspace_probe.build_xy` /
+  `phase2b_probe.fit_ridge`, byte-identical to the reported R&sup2;), rather
+  than only building HTML from an already-rendered listening set.
+- **Inputs:** `py/results/phase2b_subspace/` (manifest, subspace basis,
+  WavLM features) and `py/results/phase2a/subspace_probe*.json` (the R&sup2;
+  reports), all produced by `phase2b_generate_subspace.py` +
+  `phase2b_subspace_embed.py` + `phase2b_subspace_probe.py`. Outputs land in
+  `py/results/listening_sets/phase2a_capacity/` (27 WAVs + manifest.json).
+- **Verdict:** answered — nine triples (best/typical/worst at each of
+  K=4/16/64) rated by ear. Per triple, R&sup2; alongside the listener's call:
+  K=4 best 0.991 "cannot tell", typical 0.926 "prediction matches true /
+  glitch", worst 0.603 "cannot tell"; K=16 best 0.838 "partway / glitch",
+  typical 0.620 "matches true / glitch", worst 0.271 "partway / glitch";
+  K=64 best 0.464, typical 0.249, worst -0.090 — all three "cannot tell, all
+  three sound the same".
+  Two findings follow. (1) Audibility does not track R&sup2;: the bench's
+  single highest score, K=4 best at R&sup2;=0.991 — a near-perfect
+  reconstruction — was indistinguishable from the unperturbed control, while
+  K=16 worst at R&sup2;=0.271 was audible. The capacity metric measures
+  something real about information flow that is substantially decoupled
+  from what a listener can hear, which is worth knowing before any encoder
+  is built to maximise it. (2) Nothing was audible at K=64, at this
+  perturbation magnitude — stated as that weaker claim only; this is three
+  clips per rung and does not carry a claimed peak at K=16.
+  The listener's notes also revealed that two of the three annotated
+  glitches landed in the *control* clip — stock, unperturbed Supertonic, not
+  a prediction — which is what redirected the investigation into benches 7
+  and 8 below (baseline artifact rate and its root cause).
+  Note: an active-row style cosine was computed for every clip but
+  deliberately left out of the page — it came back nearly flat (0.98–0.99)
+  across the whole R&sup2; range, which is exactly what bench 5 already found
+  calibrating that same metric (it does not separate same-/different-speaker
+  pairs), so surfacing it here would have presented an uncalibrated number
+  next to the calibrated one under test.
+
+
+## 7. Phase 2a — Baseline artifact rate
+
+- **Artifact:** not yet published.
+- **Contains:** 20 clips drawn blind from stock, completely unperturbed
+  Supertonic (all 10 shipped presets, a mix of the 8 corpus texts and 6
+  seeds per preset/text cell), asking only whether the listener hears an
+  audible artifact and where. 4 of the 20 are exact repeats of the bench-6
+  control clips a listener already judged (woodchuck M1 seed 20261069
+  "hiccupy" / seed 20261295 "clean"; seashells M1 seed 20261449 "hiccupy" /
+  seed 20262075 clean), mixed in unlabelled as internal consistency checks.
+  Labels are blind ("Clip 01"-"Clip 20"); a reveal is available per clip
+  only after answering. Includes a Wilson-interval table stating plainly
+  that 20 clips gives only a coarse rate. Explicitly states why an automated
+  detector was not used instead (see below).
+- **Generator:** `py/benches/phase2a_baseline_bench.py` -- re-renders the 16
+  non-check clips from the exact (preset, text, seed) triples recorded in
+  `results/phase2a/baseline_artifact_rate.json` (that script's own audio is
+  not retained -- its docstring says so explicitly), using the identical
+  code path so the audio matches what was already characterized
+  numerically; the 4 check clips are copied verbatim from an existing
+  listening set rather than re-rendered.
+- **Inputs:** `py/results/phase2a/baseline_artifact_rate.json` (480-render
+  characterization, no audio),
+  `py/results/listening_sets/phase2a_seed_variance/` (source of the 4
+  check-clip WAVs). Outputs land in
+  `py/results/listening_sets/phase2a_baseline/` (20 WAVs + manifest.json).
+- **Why no detector-based number appears:** a frame-to-frame log-mel
+  spectral-flux detector, thresholded on the 480-render stock pool, flags
+  98.5% of all stock renders regardless of preset or text -- it fires on
+  ordinary consonant transients. Worse, on the two bench-6 pairs with an
+  explicit listener verdict its ordering is reversed against the listener
+  (see `phase2a_seed_variance.py`'s `detector_validation_against_listener`),
+  so it cannot be used and no number from it is shown.
+- **Verdict:** answered, blind, 20 clips.
+  **Consistency check: 4 of 4 hidden repeats agreed with the listener's
+  earlier judgements**, blind and unlabelled:
+  - woodchuck M1 seed 20261069, previously "hiccupy" -> "yes, clearly", note:
+    "chuck too condensed" (originally: "the 'chuck' after woodchuck sounds
+    condensed/hiccuped")
+  - seashells M1 seed 20261449, previously "hiccupy" -> "yes, clearly", note:
+    "time-condensed final word, maybe slightly too sharp 's'-es" (originally:
+    "the final word 'morning' is pronounced too quickly so it sounds like a
+    hiccup")
+  - seashells M1 seed 20262075, previously clean -> "no, sounds clean"
+  - woodchuck M1 seed 20261295, previously clean -> "maybe, something
+    slightly off"
+  The listener reproduced their own prior descriptions nearly verbatim,
+  including which word, on audio they could not have known was a repeat.
+  This is the evidence that the ear is the reliable instrument in this
+  project, after four automated measures failed validation (see bench 6 and
+  `docs/GLITCH_MITIGATION.md`).
+  **Baseline artifact rate**, of the 16 randomly drawn stock clips: 1 flagged
+  "yes, clearly" (6.2%, Wilson 95% CI 1.1%-28.3%), 3 more "maybe" (25%
+  combined, CI 10.2%-49.5%), 12 clean. Stock Supertonic produces a clearly
+  audible artifact on roughly one render in sixteen, with an interval wide
+  enough that only the order of magnitude is established.
+  **Every flagged clip was a female preset**: 4 of 8 female-preset clips
+  flagged (F1, F3, F5 twice), 0 of 8 male-preset clips (Fisher exact
+  one-sided p = 0.038). Small sample, but a clean split. Every artifact
+  measurement in this project so far used M1, so all of them may understate
+  the true rate.
+  **Two artifact families, not one.** Time compression ("condensed",
+  "time-condensed final word", "too quickly") is what the speed default
+  (bench 8, below) explains. Sibilant over-drive is separate and unexplained:
+  "a strong sharp 's' over-drive resulting in a sharp hissing" (the single
+  clear flag among the random clips), "maybe the 's'-es are a bit sharp, but
+  that might be normal accumulation (amplitude) peaks given how many there
+  are in quick succession", "slightly too sharp 's'-es". The speed fix does
+  not address this second family, and the second family was the only CLEAR
+  flag among the randomly drawn clips.
+  **Methodological finding — leading vs. open questions.** Bench 8 asked "Is
+  the artifact you flagged before still present in this clip?" and got "no"
+  for the woodchuck clip at every speed. This bench asked the open question
+  "Do you hear an audible artifact in this clip?", blind, and the SAME clip
+  — verified bit-identical, waveform correlation 1.00000000 — came back "yes,
+  clearly, chuck too condensed", seven minutes later. A leading question that
+  presupposes the listener can re-identify a previously-described artifact
+  suppressed a detection that an open question recovered. The bench-8
+  woodchuck ladder is therefore unusable as evidence, and the speed
+  hypothesis still rests on the seashells sentence alone. See bench 8's
+  amended verdict below, and the new CLAUDE.md bullet on open vs. leading
+  questions.
+
+## 8. Phase 2a — Speed root-cause
+
+- **Artifact:** not published (per task instructions).
+- **Contains:** for each flagged sentence (woodchuck, seed 20261069;
+  seashells, seed 20261449 — both unperturbed M1, bench 6's control clips),
+  three level-matched, seed-matched comparison groups: (A) speed sweep
+  1.05/1.00/0.90 with per-word durations from faster-whisper; (B) the
+  standard trimmed render vs. the full untrimmed vocoder output at
+  speed=1.05, plus a dBFS comparison of the discarded tail against the kept
+  clip; (C) TOTAL_STEP 8 vs. 32 at speed=1.05. A pipeline-instrumentation
+  table (raw duration-predictor output, duration after `/speed`,
+  `latent_len`, raw vs. trimmed vocoder sample counts, discarded-tail dBFS)
+  sits above the clips. Each clip asks directly whether the previously
+  flagged artifact is still present.
+- **Generator:** `py/benches/phase2a_speed_rootcause_bench.py`, db
+  collection `speed_verdicts`.
+- **Inputs:** `py/results/phase2a/speed_rootcause.json` and
+  `speed_word_durations.json` (produced by `py/phase2a_speed_rootcause.py` +
+  `py/phase2a_speed_word_durations.py`), WAVs in
+  `py/results/listening_sets/phase2a_speed_rootcause/`.
+- **Measured findings (see report to the task's caller for the full
+  writeup):** `speed=1.05`'s default is upstream (commit `8518b83`, not
+  introduced by this fork). The discarded tail from the standard trim
+  measures ~-106 dBFS against a ~-26 dBFS clip (~80 dB down) in both
+  flagged renders — the post-hoc trim removes near-digital-silence, not
+  truncated speech, so effect (2) in the original hypothesis (audible
+  content being cut off) is not supported. The flagged/utterance-final
+  words lengthen as speed drops from 1.05 toward 0.90 in most
+  (sentence, seed) pairs, and in several cases lengthen faster than the
+  clip's overall duration does — more than a uniform time-stretch would
+  predict — consistent with those words being disproportionately
+  compressed at the default speed (effect 1: the acoustic model fitting
+  speech into a shrunk time budget). Not monotonic in every single seed
+  (faster-whisper word-boundary jitter is tens of ms).
+- **Verdict:** partially answered, and the partiality matters — **amended**
+  after bench 7. Seashells was cleanly rated across the speed sweep: artifact
+  "clearly still there" at speed 1.05 (upstream's default), "no" at 1.00,
+  "no" at 0.90. Separately, at speed held fixed at 1.05, TOTAL_STEP 8 read
+  "somewhat" and TOTAL_STEP 32 read "no". Duration is invariant to step count
+  by construction, so two independent levers are acting on the same artifact
+  and speed is not the whole mechanism — the reading is that compression
+  makes the acoustic problem harder, and 8 denoising steps cannot resolve it
+  while 32 can. This row is now **CORROBORATED**: bench 7's clip13 is
+  bit-identical to this bench's seashells speed-1.05 clip, and both were
+  independently flagged "yes, clearly".
+  Woodchuck returned "no artifact" at every setting, including the clip
+  previously annotated as condensed — its three ratings were saved 2 seconds
+  apart on 4-second clips, which was already flagged as too close to trust.
+  Bench 7 has since shown why: the same bit-identical woodchuck clip, asked
+  the open question "do you hear an audible artifact" instead of "is the
+  artifact you flagged before still present," came back "yes, clearly, chuck
+  too condensed." The woodchuck row here is now understood to be a
+  question-framing artifact — the leading phrasing suppressed a detection an
+  open question recovered — not a genuine null, and it is **not** usable as
+  evidence that speed has no effect on woodchuck; a re-test with an open
+  question is outstanding.
+  The accidental control calibrates the rest: the trimmed and untrimmed
+  clips are acoustically identical (discarded tail ~80 dB below the signal)
+  and were rated one category apart, giving a rating-noise floor of roughly
+  &plusmn;1 category — which is what makes the seashells 1.05-to-1.00 result,
+  a two-category jump, meaningful.
+  Conclusion: the artifact evidence is one sentence with a second
+  (unreproduced) sentence, so the fork's change of the `speed` default to
+  1.0 rests on the principled argument — restoring the model's own trained
+  duration prediction, and matching pre-November-2025 behaviour — rather
+  than on this bench. See `docs/GLITCH_MITIGATION.md` and
+  `docs/upstream_pr_speed_default.md`.
+
+## 9. Phase 2a — Preset-span perturbation, same-voice check
+
+- **Artifact:** not published (per task instructions).
+- **Contains:** ten clips in five blind A/B groups, each pairing an
+  unperturbed M1 reference against one perturbed M1 render — one group per
+  text (pangram, sibilant-heavy sentence, woodchuck, two longer sentences) —
+  with the perturbation drawn either from the preset-span subspace or from a
+  random-control subspace, eps=0.20, speed=1.05. A 4-way forced-choice
+  question plus free text per clip.
+- **Generator:** `py/benches/phase2a_presetspan_bench.py`.
+- **Inputs:** `py/results/phase2b_presetspan/{preset_span,random_control}/`,
+  `geometry.json`; WAVs in
+  `py/results/listening_sets/phase2a_presetspan/`.
+- **Bench-design defect, found and recorded here so it is not repeated:**
+  the four forced-choice options offered were different-voice-clean /
+  same-voice-wrong / different-voice-AND-wrong / no-difference. None of them
+  is "same voice, audibly different, nothing wrong" — the answer the
+  listener actually had on all ten clips — so every verdict landed on
+  same-voice-wrong by elimination, and only the free-text field recovered
+  what was actually heard. Verbatim, across clips: "not wrong, all fine,
+  only it seems both samples apply different strength of pronunciation on
+  'jumps' and 'dog'"; "again same voice just other pronunciation, maybe
+  overall a bit rushier"; "voice is the same, but even better than original
+  (original has bit distortion near the end, this one feels like less)"
+  (three separate clips, worded similarly); "same voice, bit different
+  pronunciation emphasis (just different, not worse)"; "voice is the same,
+  but this is the clearest / crispest version." This is the third
+  bench-design error in the series, after bench 8's leading question and the
+  WavLM bench's mechanism-describing label — see the new CLAUDE.md rule on
+  option-set coverage. The generator now offers a fifth option, "the same
+  voice, audibly different, nothing wrong with it," added directly above the
+  affected `Q1_OPTIONS` in the script with a comment citing this entry.
+- **Findings:**
+  1. **No identity change in either condition** — ten of ten free-text
+     verdicts say "same voice."
+  2. **Preset-span and random-control are indistinguishable by ear**,
+     described in the same terms group by group, so preset-span's +0.18
+     mean R^2 advantage over random control (0.9376 vs 0.7593, Phase 2a's
+     capacity measurement) does not translate into an audible difference at
+     eps=0.20 — the same R^2-versus-audibility decoupling bench 6 found,
+     now on the phase's strongest numerical result.
+  3. **The audible effect is emphasis, not timbre.** Multiple notes name
+     specific words ("jumps", "dog") and describe changed emphasis or
+     rhythm — consistent with `style_ttl`'s per-text-position reach through
+     `text_encoder` (see the CLAUDE.md project note on where `style_ttl`
+     enters), now confirmed as the dominant audible effect at this
+     magnitude.
+  4. **Perturbed clips were repeatedly judged better than the unperturbed
+     reference** — four notes report less end-of-utterance distortion, one
+     "clearest/crispest." The reference is unperturbed M1 at speed=1.05,
+     where the compression artifact traced in bench 8 and
+     `docs/GLITCH_MITIGATION.md` is expected near the end of the utterance.
+     Recorded as an observation worth its own test, not a conclusion:
+     perturbing `style_ttl` may relieve that artifact rather than cause one.
+  5. **Scale context:** the perturbation's Frobenius norm (0.98) is roughly
+     a third of the nearest real preset-to-M1 distance (1.85-3.49, Phase 0),
+     so this tested the axis at a fraction of the scale Phase 0 already
+     validated as giving distinct voices — not a refutation of the axis at
+     full scale, a measurement at a smaller one.
+- **Verdict:** at eps=0.20, `style_ttl` perturbations along either subspace
+  read as the same voice, audibly different (mainly in emphasis), and not
+  degraded — answering task 2a-5 for this magnitude. Whether degradation
+  appears at larger eps, or how the preset-span/random-control gap in
+  probe-recoverability might still separate by ear at a different scale,
+  remains open. See `new-plan.md`'s Phase 2a-5 result note for how this
+  folds into the roadmap.
