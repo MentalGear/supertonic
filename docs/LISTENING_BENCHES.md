@@ -312,8 +312,14 @@ exist locally.
   too condensed." The woodchuck row here is now understood to be a
   question-framing artifact — the leading phrasing suppressed a detection an
   open question recovered — not a genuine null, and it is **not** usable as
-  evidence that speed has no effect on woodchuck; a re-test with an open
-  question is outstanding.
+  evidence that speed has no effect on woodchuck.
+  **Amended (bench 10, 2026-09-18): confirmed, not merely suspected.** A
+  dedicated open-frame re-test of the woodchuck speed ladder (bench 10, below)
+  found the same compression artifact at speed 1.05 ("maybe, something
+  slightly off... second to last 'chuck' sounds compressed") and a clean
+  clip at 1.00 and 0.90 — the pattern this row's leading question had
+  suppressed. This bench's woodchuck row stays void as evidence in its own
+  right; bench 10 is the re-test that was outstanding.
   The accidental control calibrates the rest: the trimmed and untrimmed
   clips are acoustically identical (discarded tail ~80 dB below the signal)
   and were rated one category apart, giving a rating-noise floor of roughly
@@ -392,3 +398,62 @@ exist locally.
   probe-recoverability might still separate by ear at a different scale,
   remains open. See `new-plan.md`'s Phase 2a-5 result note for how this
   folds into the roadmap.
+
+## 10. Phase 2a — Speed, open-frame redo
+
+- **Artifact:** https://claude.ai/artifact/PALvbvoJMmxiuhSVSWptzT
+- **Contains:** the same two speed ladders as bench 8 (woodchuck, seed
+  20261069; seashells, seed 20261449; both unperturbed M1), 1.05 / 1.00 /
+  0.90, rms level-matched, blind and order-randomised per sentence, with no
+  speed value, no sentence text and neither previously-flagged word ("chuck",
+  "morning") anywhere on the page or in its script — the speed-to-clip
+  mapping lives only in `manifest.json` and the artifact's db. Every clip
+  asks the same open, non-leading question bench 7 used: "Do you hear an
+  audible artifact in this clip?" — never bench 8's "is the artifact you
+  flagged before still present?"
+- **Generator:** `py/benches/phase2a_speed_openframe_bench.py`. Renders no
+  new audio; reuses the existing speed-sweep WAVs from bench 8's underlying
+  render (`py/phase2a_speed_rootcause.py`), only level-matching and
+  reordering them.
+- **Inputs:** `py/results/phase2a/speed_rootcause.json` and WAVs under
+  `py/results/listening_sets/phase2a_speed_rootcause/` (source); leveled,
+  reordered WAVs and `manifest.json` written to
+  `py/results/listening_sets/phase2a_speed_openframe/`.
+- **Findings:**
+  - Woodchuck (seed 20261069): 0.90 "no, sounds clean"; 1.00 "no, sounds
+    clean"; 1.05 "maybe, something slightly off" — "second to last 'chuck'
+    sounds compressed".
+  - Seashells (seed 20261449): 0.90 "no, sounds clean" — "maybe the end of
+    'shore' has a slight compression, otherwise clean"; 1.00 "yes, clearly"
+    — "s sounds slured / sharp"; 1.05 "yes, clearly" — "morning is
+    time-condensed".
+- **Verdict:** confirms two prior findings and closes one open question.
+  1. **The compression finding now holds on two sentences, not one.**
+     Present at 1.05 in both, absent at 1.00 and 0.90 in both — the pattern
+     the fork's `speed=1.0` default was already changed on principle for now
+     has listening evidence on a second sentence, not only seashells. The
+     woodchuck read ("maybe") is weaker than the seashells one ("yes,
+     clearly"), and the 0.90 seashells clip carries a "maybe... slight
+     compression" note in free text despite a "no" forced choice — both
+     recorded honestly, neither undermines the pattern.
+  2. **Bench 8's woodchuck null is confirmed as a question-framing
+     artifact, not a genuine absence.** Asked openly and blind here, the
+     listener found the artifact at 1.05 only, independently describing it
+     as "compressed" on the same word ("chuck") they had named weeks earlier
+     without being shown it or told the sentence was a repeat. The leading
+     question in bench 8, not the audio, produced that null. See bench 8's
+     amended verdict above and the CLAUDE.md bullet on open vs. leading
+     questions this incident created.
+  3. **The listener separated the two artifact families blind, unprompted —
+     independent support for the two-family taxonomy.** Seashells at speed
+     1.00 was flagged "yes, clearly" with "s sounds slured / sharp" — sibilant
+     over-drive, not compression. At 1.00, compression is expected to be
+     gone (and is: both 1.00 and 0.90 woodchuck clips read clean, and
+     seashells' own 1.05 note is "time-condensed" in entirely different
+     vocabulary). The listener had no access to the speeds, the sentence
+     identities, or the existence of a taxonomy, and still described the two
+     conditions in disjoint terms. This is the strongest evidence so far
+     that time compression and sibilant over-drive are genuinely distinct
+     mechanisms rather than two descriptions of one artifact.
+  Scope: still one listener, two sentences — corroboration of the principled
+  `speed=1.0` argument, not independent proof of it.

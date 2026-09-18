@@ -1179,6 +1179,24 @@ including a bench-design defect (the option set forced all ten verdicts into
 "something wrong" until free text corrected it) recorded there and folded
 into the new CLAUDE.md rule on option-set coverage.
 
+### Speed-default evidential status (bench 10, 2026-09-18): confirmed on two sentences, still one listener
+
+The `speed=1.0` default change (see `docs/GLITCH_MITIGATION.md`) rests
+primarily on the principled argument — restoring the duration predictor's
+own trained estimate rather than dividing it by 1.05 on every render — and
+that remains the load-bearing case. Bench 10
+([LISTENING_BENCHES.md](docs/LISTENING_BENCHES.md#10-phase-2a--speed-open-frame-redo))
+adds corroborating listening evidence on a second sentence: an open-frame,
+blind re-test of bench 8's woodchuck ladder (voided earlier by a leading
+question) found the same compression artifact at speed 1.05 only, matching
+the already-corroborated seashells result. This also closes bench 8's
+outstanding re-test and gives independent, blind support for the
+two-family taxonomy (compression vs. sibilant over-drive) in
+`docs/GLITCH_MITIGATION.md` — the same listener, given no information about
+speed or sentence identity, described the two mechanisms in disjoint
+vocabulary. Status: two sentences, one listener — corroboration, not
+independent proof.
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?
