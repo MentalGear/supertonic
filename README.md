@@ -16,6 +16,19 @@
 > evidence and its limits. The parameter itself is unchanged — pass
 > `speed=1.05` explicitly to get the old upstream behaviour back.
 
+> **Fork-specific addition — optional `seed` for reproducible rendering.**
+> Vocoder sampling draws random noise with no seed by default, so the same
+> style tensor rendered twice gives audibly different audio. Both
+> `py/helper.py` and `web/helper.js` now accept an optional `seed` argument
+> (on `__call__`/`call`, `batch`, and `sample_noisy_latent`/
+> `sampleNoisyLatent`) to make a render reproducible: the same seed and style
+> always produce the same audio, and different seeds produce different
+> audio. Omitting `seed` (or passing `None`/`null`) keeps today's behaviour
+> exactly — unseeded, drawn from `Math.random()`/the global `np.random`
+> state, with no reseeding. The Python and JS seeded streams do **not**
+> match each other (different PRNG algorithms) — that's expected, and not
+> something to "fix".
+
 <p align="center">
   <img src="img/Supertonic3_HeroImage.png" alt="Supertonic 3 Banner">
 </p>

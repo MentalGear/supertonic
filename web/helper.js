@@ -206,6 +206,30 @@ function restoreRowNorms(blended, referenceData, rowLength) {
 }
 
 /**
+ * mulberry32: a tiny deterministic PRNG, used ONLY for the seeded noise draw
+ * in `sampleNoisyLatent`. JS has no seedable equivalent of Python's global
+ * RNG, so this exists purely to make "same seed -> same audio" possible in
+ * the browser; the unseeded path keeps using `Math.random()` exactly as
+ * before, untouched by this function.
+ *
+ * NOTE: this stream does NOT match Python's `np.random.default_rng(seed)`
+ * stream -- they are different algorithms entirely, and are not meant to
+ * match. A seeded render in the browser will not reproduce the same audio
+ * as the same seed in Python; only "same seed, same platform -> same audio"
+ * is guaranteed. What must match across the two implementations is the
+ * blending semantics (with_deltas/withDeltas), not the RNG stream.
+ */
+function mulberry32(seed) {
+    let state = seed >>> 0;
+    return function () {
+        state = (state + 0x6d2b79f5) | 0;
+        let t = Math.imul(state ^ (state >>> 15), 1 | state);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
  * Style class to hold TTL and DP tensors
  */
 export class Style {
@@ -313,7 +337,7 @@ export class TextToSpeech {
         this.sampleRate = cfgs.ae.sample_rate;
     }
 
-    async _infer(textList, langList, style, totalStep, speed = 1.0, progressCallback = null) {
+    async _infer(textList, langList, style, totalStep, speed = 1.0, progressCallback = null, seed = null) {
         const bsz = textList.length;
         
         // Process text
@@ -354,7 +378,8 @@ export class TextToSpeech {
             this.sampleRate,
             this.cfgs.ae.base_chunk_size,
             this.cfgs.ttl.chunk_compress_factor,
-            this.cfgs.ttl.latent_dim
+            this.cfgs.ttl.latent_dim,
+            seed
         );
         
         const latentMaskFlat = new Float32Array(latentMask.flat(2));
@@ -422,7 +447,7 @@ export class TextToSpeech {
         return { wav, duration };
     }
 
-    async call(text, lang, style, totalStep, speed = 1.0, silenceDuration = 0.3, progressCallback = null) {
+    async call(text, lang, style, totalStep, speed = 1.0, silenceDuration = 0.3, progressCallback = null, seed = null) {
         if (style.ttl.dims[0] !== 1) {
             throw new Error('Single speaker text to speech only supports single style');
         }
@@ -431,9 +456,9 @@ export class TextToSpeech {
         const langList = new Array(textList.length).fill(lang);
         let wavCat = [];
         let durCat = 0;
-        
+
         for (let i = 0; i < textList.length; i++) {
-            const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback);
+            const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback, seed);
             
             if (wavCat.length === 0) {
                 wavCat = wav;
@@ -449,21 +474,32 @@ export class TextToSpeech {
         return { wav: wavCat, duration: [durCat] };
     }
 
-    async batch(textList, langList, style, totalStep, speed = 1.0, progressCallback = null) {
-        return await this._infer(textList, langList, style, totalStep, speed, progressCallback);
+    async batch(textList, langList, style, totalStep, speed = 1.0, progressCallback = null, seed = null) {
+        return await this._infer(textList, langList, style, totalStep, speed, progressCallback, seed);
     }
 
-    sampleNoisyLatent(duration, sampleRate, baseChunkSize, chunkCompress, latentDim) {
+    /**
+     * `seed`: optional. Omitted/null/undefined (the default) draws from
+     * `Math.random()` exactly as before this parameter existed -- unseeded,
+     * so two calls still differ. Passing an int seed draws instead from a
+     * local mulberry32 generator confined to this call, so the same seed
+     * and style always give the same latent. See the mulberry32 comment
+     * above for why the Python and JS seeded streams don't (and can't)
+     * match each other.
+     */
+    sampleNoisyLatent(duration, sampleRate, baseChunkSize, chunkCompress, latentDim, seed = null) {
         const bsz = duration.length;
         const maxDur = Math.max(...duration);
-        
+
         const wavLenMax = Math.floor(maxDur * sampleRate);
         const wavLengths = duration.map(d => Math.floor(d * sampleRate));
-        
+
         const chunkSize = baseChunkSize * chunkCompress;
         const latentLen = Math.floor((wavLenMax + chunkSize - 1) / chunkSize);
         const latentDimVal = latentDim * chunkCompress;
-        
+
+        const rand = (seed === null || seed === undefined) ? Math.random : mulberry32(seed);
+
         const xt = [];
         for (let b = 0; b < bsz; b++) {
             const batch = [];
@@ -471,8 +507,8 @@ export class TextToSpeech {
                 const row = [];
                 for (let t = 0; t < latentLen; t++) {
                     // Box-Muller transform
-                    const u1 = Math.max(0.0001, Math.random());
-                    const u2 = Math.random();
+                    const u1 = Math.max(0.0001, rand());
+                    const u2 = rand();
                     const val = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
                     row.push(val);
                 }

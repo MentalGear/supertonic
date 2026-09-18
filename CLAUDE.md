@@ -111,6 +111,12 @@ inline burns the context the main loop needs for judgment.
   draws `np.random.randn` with no seed, so rendering the same style tensor twice
   gives audibly different waveforms. Any "is this the same as before" check must
   be made at the tensor level, not on audio, unless the RNG is explicitly seeded.
+  An optional `seed` parameter now exists end-to-end (`sample_noisy_latent`/
+  `sampleNoisyLatent`, `_infer`, `__call__`/`call`, `batch`, in both
+  `py/helper.py` and `web/helper.js`) for reproducible renders — but unseeded
+  remains the default in both, byte-for-byte identical to before the
+  parameter existed, and the two implementations' seeded streams do not
+  match each other.
 - Generated audio follows the naming and manifest convention in
   [docs/EMOTION_ROADMAP.md](docs/EMOTION_ROADMAP.md). Keep comparison sets on
   identical text, base voice, and inference settings.

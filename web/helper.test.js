@@ -26,7 +26,7 @@ registerHooks({
     }
 });
 
-const { Style } = await import('./helper.js');
+const { Style, TextToSpeech } = await import('./helper.js');
 
 // --- test fixtures -------------------------------------------------------
 
@@ -358,4 +358,102 @@ test('withEmotion keeps its [0, 1] intensity constraint and its error messages',
 
     const wrongBatch = makeDelta(4, 48);
     assert.throws(() => base.withEmotion(wrongBatch, 1), /Emotion batch dimensions do not match the voice style/);
+});
+
+// --- optional seed on sampleNoisyLatent ----------------------------------
+//
+// TextToSpeech.sampleNoisyLatent never touches the ONNX sessions, only
+// cfgs.ae/cfgs.ttl, so it can be exercised directly with dummy (null)
+// sessions.
+
+function makeTts() {
+    const cfgs = {
+        ae: { sample_rate: 24000, base_chunk_size: 32 },
+        ttl: { chunk_compress_factor: 4, latent_dim: 8 },
+    };
+    return new TextToSpeech(cfgs, null, null, null, null, null);
+}
+
+function drawLatent(tts, duration, seed) {
+    return tts.sampleNoisyLatent(
+        duration,
+        tts.sampleRate,
+        tts.cfgs.ae.base_chunk_size,
+        tts.cfgs.ttl.chunk_compress_factor,
+        tts.cfgs.ttl.latent_dim,
+        seed
+    );
+}
+
+test('sampleNoisyLatent: same seed twice is identical', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const a = drawLatent(tts, duration, 123);
+    const b = drawLatent(tts, duration, 123);
+    assert.deepStrictEqual(a.xt, b.xt);
+    assert.deepStrictEqual(a.latentMask, b.latentMask);
+});
+
+test('sampleNoisyLatent: different seeds differ', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const a = drawLatent(tts, duration, 1);
+    const b = drawLatent(tts, duration, 2);
+    assert.notDeepStrictEqual(a.xt, b.xt);
+});
+
+test('sampleNoisyLatent: seeded draw never touches Math.random', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const originalRandom = Math.random;
+    let calls = 0;
+    Math.random = () => { calls++; return originalRandom(); };
+    try {
+        drawLatent(tts, duration, 42);
+    } finally {
+        Math.random = originalRandom;
+    }
+    assert.equal(calls, 0, 'seeded path must not draw from Math.random');
+});
+
+test('sampleNoisyLatent: no seed still uses Math.random (default behavior unchanged)', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const originalRandom = Math.random;
+    let calls = 0;
+    Math.random = () => { calls++; return originalRandom(); };
+    try {
+        drawLatent(tts, duration, null);
+    } finally {
+        Math.random = originalRandom;
+    }
+    assert.ok(calls > 0, 'unseeded path should still draw from Math.random');
+});
+
+test('sampleNoisyLatent: no seed (omitted entirely) also uses Math.random', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const originalRandom = Math.random;
+    let calls = 0;
+    Math.random = () => { calls++; return originalRandom(); };
+    try {
+        tts.sampleNoisyLatent(
+            duration,
+            tts.sampleRate,
+            tts.cfgs.ae.base_chunk_size,
+            tts.cfgs.ttl.chunk_compress_factor,
+            tts.cfgs.ttl.latent_dim
+        );
+    } finally {
+        Math.random = originalRandom;
+    }
+    assert.ok(calls > 0, 'unseeded path (no seed arg at all) should still draw from Math.random');
+});
+
+test('sampleNoisyLatent: two unseeded calls differ', () => {
+    const tts = makeTts();
+    const duration = [1.0, 1.5];
+    const a = drawLatent(tts, duration, null);
+    const b = drawLatent(tts, duration, null);
+    assert.notDeepStrictEqual(a.xt, b.xt);
 });

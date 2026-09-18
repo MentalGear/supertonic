@@ -292,15 +292,49 @@ class TextToSpeech:
         self.ldim = cfgs["ttl"]["latent_dim"]
 
     def sample_noisy_latent(
-        self, duration: np.ndarray
+        self, duration: np.ndarray, seed: Optional[int] = None
     ) -> tuple[np.ndarray, np.ndarray]:
+        """Draw the initial noisy latent the denoising loop starts from.
+
+        ``seed=None`` (the default) draws from the global ``np.random`` RNG
+        exactly as before this parameter existed: unseeded, and without
+        reseeding anything. That means two calls with no seed still give
+        different audio, and a caller who seeds the global RNG themselves
+        (as every experiment script in this repo already does) still gets
+        the same reproducibility they always had.
+
+        Passing an int ``seed`` draws instead from a local
+        ``np.random.default_rng(seed)`` confined to this call -- it never
+        touches or reseeds the global RNG, so it can't leak state into the
+        caller's process. The same seed and style always produce the same
+        latent (and therefore the same audio); different seeds produce
+        different ones.
+
+        NOTE: ``np.random.default_rng(...).standard_normal`` and
+        ``np.random.randn`` are different PRNG streams (PCG64 vs the legacy
+        MT19937-based global state). A seeded render will therefore NOT
+        reproduce the same audio as an unseeded render, even by accident --
+        that is expected, not a bug. The JS mirror in ``web/helper.js`` uses
+        yet another stream (a small deterministic generator, since JS has no
+        seedable global equivalent); the Python and JS seeded streams are not
+        intended to match each other either. What must match between the two
+        implementations is the blending semantics, not the RNG.
+        """
         bsz = len(duration)
         wav_len_max = duration.max() * self.sample_rate
         wav_lengths = (duration * self.sample_rate).astype(np.int64)
         chunk_size = self.base_chunk_size * self.chunk_compress_factor
         latent_len = ((wav_len_max + chunk_size - 1) / chunk_size).astype(np.int32)
         latent_dim = self.ldim * self.chunk_compress_factor
-        noisy_latent = np.random.randn(bsz, latent_dim, latent_len).astype(np.float32)
+        if seed is None:
+            noisy_latent = np.random.randn(bsz, latent_dim, latent_len).astype(
+                np.float32
+            )
+        else:
+            rng = np.random.default_rng(seed)
+            noisy_latent = rng.standard_normal((bsz, latent_dim, latent_len)).astype(
+                np.float32
+            )
         latent_mask = get_latent_mask(
             wav_lengths, self.base_chunk_size, self.chunk_compress_factor
         )
@@ -314,6 +348,7 @@ class TextToSpeech:
         style: Style,
         total_step: int,
         speed: float = 1.0,
+        seed: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         assert (
             len(text_list) == style.ttl.shape[0]
@@ -328,7 +363,7 @@ class TextToSpeech:
             None,
             {"text_ids": text_ids, "style_ttl": style.ttl, "text_mask": text_mask},
         )  # dur_onnx: [bsz]
-        xt, latent_mask = self.sample_noisy_latent(dur_onnx)
+        xt, latent_mask = self.sample_noisy_latent(dur_onnx, seed=seed)
         total_step_np = np.array([total_step] * bsz, dtype=np.float32)
         for step in range(total_step):
             current_step = np.array([step] * bsz, dtype=np.float32)
@@ -355,6 +390,7 @@ class TextToSpeech:
         total_step: int,
         speed: float = 1.0,
         silence_duration: float = 0.3,
+        seed: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         assert (
             style.ttl.shape[0] == 1
@@ -364,7 +400,9 @@ class TextToSpeech:
         wav_cat = None
         dur_cat = None
         for text in text_list:
-            wav, dur_onnx = self._infer([text], [lang], style, total_step, speed)
+            wav, dur_onnx = self._infer(
+                [text], [lang], style, total_step, speed, seed=seed
+            )
             if wav_cat is None:
                 wav_cat = wav
                 dur_cat = dur_onnx
@@ -383,8 +421,9 @@ class TextToSpeech:
         style: Style,
         total_step: int,
         speed: float = 1.0,
+        seed: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        return self._infer(text_list, lang_list, style, total_step, speed)
+        return self._infer(text_list, lang_list, style, total_step, speed, seed=seed)
 
 
 def length_to_mask(lengths: np.ndarray, max_len: Optional[int] = None) -> np.ndarray:
