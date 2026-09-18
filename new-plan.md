@@ -1197,6 +1197,27 @@ speed or sentence identity, described the two mechanisms in disjoint
 vocabulary. Status: two sentences, one listener — corroboration, not
 independent proof.
 
+### Sibilance-source check (bench 11, 2026-09-18): not fork-specific; human-vs-synthesis comparison unanswerable with current assets
+
+Bench 11 mixed our flagged/clean clips with upstream's own Supertonic-3
+showcase audio to ask whether sibilant over-drive (the second, unexplained
+artifact family in `docs/GLITCH_MITIGATION.md`) is specific to this fork's
+presets. The listener reproduced their F3/F5 flags blind a fourth time, and
+also flagged upstream's own English-language synthesis (`keld_supertonic3`),
+so the artifact is not fork- or preset-specific. An initial reading that a
+human reference recording was also flagged, taken as proof the phenomenon
+isn't synthesis-specific, is **retracted**: a post-hoc language check found
+every human reference recording in the bench is Korean, a language the
+listener does not speak, and no English human recording with sibilant
+content exists in the available assets — so that comparison is
+uninterpretable, not evidence either way. The defect-vs-characteristic
+question stays open pending matched-language, matched-speaker material. See
+[LISTENING_BENCHES.md](docs/LISTENING_BENCHES.md#11-phase-2a--sibilance-sources-is-over-drive-ours-or-the-engines)
+and the revised sibilance section of
+[GLITCH_MITIGATION.md](docs/GLITCH_MITIGATION.md) for the full record,
+including a fourth bench-design lesson (check clip language against the
+listener's own before asking about phonetic detail).
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?

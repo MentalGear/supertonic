@@ -13,6 +13,9 @@ that a `style_ttl` perturbation may relieve rather than cause the
 end-of-utterance artifact (see item 5 under "Proposed, not established"),
 and bench 10 is the open-frame re-test that closes bench 8's outstanding
 woodchuck row and confirms the compression finding on a second sentence.
+Bench 11 asked whether sibilant over-drive is specific to this fork's
+presets or a wider property, mixing in upstream's own showcase audio — see
+"Sibilant over-drive" below for what it did and did not settle.
 
 ## The finding
 
@@ -320,13 +323,13 @@ the generator, inputs, and full verdict; summary:
   only the order of magnitude is established.
 - **Two artifact families, not one.** Time compression ("condensed",
   "time-condensed final word", "too quickly") is what the speed default,
-  below, addresses. **Sibilant over-drive is separate and unexplained** — "a
-  strong sharp 's' over-drive resulting in a sharp hissing" was the single
-  clear flag among the randomly drawn clips, with two more "maybe"s citing
-  sharp 's'-sounds. The speed fix does not touch this second family, and it
-  was the only clear flag in the random draw — so the speed fix should not be
-  read as addressing "the" baseline artifact rate; it addresses one of two
-  known causes.
+  below, addresses. **Sibilant over-drive is separate, and remains
+  unexplained** — "a strong sharp 's' over-drive resulting in a sharp
+  hissing" was the single clear flag among the randomly drawn clips, with
+  two more "maybe"s citing sharp 's'-sounds. The speed fix does not touch
+  this second family, and it was the only clear flag in the random draw — so
+  the speed fix should not be read as addressing "the" baseline artifact
+  rate; it addresses one of two known causes.
   **The taxonomy has since been confirmed blind, by the same listener
   separating the two families unprompted.** Bench 10 (see
   [LISTENING_BENCHES.md](LISTENING_BENCHES.md#10-phase-2a--speed-open-frame-redo))
@@ -339,6 +342,61 @@ the generator, inputs, and full verdict; summary:
   This is the strongest evidence so far that time compression and sibilant
   over-drive are two distinct mechanisms rather than two descriptions of one
   artifact.
+
+### Sibilant over-drive: not fork-specific, but defect-vs-characteristic stays open
+
+Bench 11 (see
+[LISTENING_BENCHES.md](LISTENING_BENCHES.md#11-phase-2a--sibilance-sources-is-over-drive-ours-or-the-engines))
+mixed our flagged and clean clips in with upstream's own Supertonic-3
+showcase syntheses and human reference recordings, blind, to ask whether
+this is our fork's problem or a wider one. Two results, one that stands and
+one that does not:
+
+- **Stands: the artifact is not fork-specific or preset-specific.** The
+  listener reproduced their own F3/F5 flags a fourth time, blind, in a mixed
+  set — the most reliably demonstrated finding in this project — and also
+  flagged upstream's own English-language showcase synthesis
+  (`keld_supertonic3`, "yes, clearly"; `luna_supertonic3`, "maybe"), on
+  voices and text unrelated to any of our presets. Sibilant over-drive
+  therefore reproduces on the original project's own output under the same
+  frozen engine, not only on our chosen voices.
+- **Does not stand: an initial reading that a genuine human recording
+  (`luna_reference`) was also flagged, taken as evidence the phenomenon is
+  not synthesis-specific, and used to reclassify F3/F5 as "probably a voice
+  characteristic rather than an engine defect."** This is retracted. A
+  `faster-whisper` language pass over the bench's source files found that
+  every human reference recording used (`keld`, `luna`, `watson`) is
+  Korean — a language the listener does not speak — so a judgement of
+  whether a specific consonant sounds "over-driven" on those clips is
+  uninterpretable, not evidence either way. No English human reference
+  recording with sibilant content exists in the available assets
+  (`nora_reference` is English but has no sibilant words), and upstream's
+  reference/synthesis pairs are cross-lingual by design (they showcase
+  zero-shot voice cloning across languages), so **no matched-language,
+  matched-speaker human-vs-synthesis comparison exists to run this test on**.
+  The question bench 11 was built to answer — engine defect, or a property
+  some voices/recordings simply have — is therefore still open, not
+  resolved toward "characteristic." The descriptive measurement behind the
+  retracted reclassification (F3/F5 hold fricatives roughly 50% longer than
+  this pool's clean clips, 0.059-0.064 s against 0.031-0.048 s, plus more
+  relative 4-11 kHz energy and softer onsets — `bench7_pool_reproduction` in
+  `py/results/phase2a/sibilance_latent.json`) still stands as a description;
+  only its interpretation as "characteristic, not defect" is withdrawn.
+- **The twelve automated measures below are still unexplained by this.**
+  Bench 11 shows why it cannot itself adjudicate defect-vs-characteristic
+  (the language confound), not why the log-mel, per-word, timing-drift and
+  sibilant-ratio measures fail to separate flagged from clean clips on our
+  own English-language pool. That remains twelve failures to explain, not
+  twelve unlucky choices resolved by a wider cause.
+- A real test needs English human speech with sibilant content, recorded
+  and synthesised from the same speaker and comparable text — not currently
+  available.
+- **Bench-design lesson, recorded as the fourth in this project's series**
+  (after bench 8's leading question, the WavLM bench's mechanism-describing
+  label, and bench 9's option set that did not span the answer space): check
+  the language of every clip against the listener's own before publishing a
+  bench that asks about a phonetic detail, and mark or exclude anything the
+  listener cannot judge in that language.
 - **Every flagged clip was a female preset**: 4 of 8 female-preset clips
   flagged (F1, F3, F5 twice), 0 of 8 male-preset clips (Fisher exact
   one-sided p = 0.038). Small sample — this is a new observation, not an

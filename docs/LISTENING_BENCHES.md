@@ -457,3 +457,123 @@ exist locally.
      mechanisms rather than two descriptions of one artifact.
   Scope: still one listener, two sentences — corroboration of the principled
   `speed=1.0` argument, not independent proof of it.
+
+## 11. Phase 2a — Sibilance sources: is over-drive ours, or the engine's?
+
+- **Artifact:** https://claude.ai/artifact/JQH6Sfvt5DABg9RhUvKSU4
+- **Contains:** fourteen clips, blind and order-randomised, rms level-matched
+  to the set's median loudness, one open question each ("does the 's' sound
+  over-driven?"), mixing four sources: our two previously-flagged clips (F3
+  library seed 20361268, F5 seashells seed 20361347), three of our clean
+  pool clips (F2, M3, M4), upstream's own six Supertonic-3 showcase
+  syntheses, and the three upstream human reference recordings whose text
+  contains detected sibilant content (`keld`, `luna`, `watson` —
+  `alphonse`/`moka`/`nora` references have none). Source identity is held
+  only in `manifest.json` and the artifact's db, never in page text or
+  script, per this bench's blinding requirement. Motivated by
+  `phase2a_sibilance_latent.py`'s Part C, which found upstream's own showcase
+  renders scoring as high or higher on the 4-11 kHz sibilant-band ratio than
+  our flagged clips (keld 0.459, luna 0.617 vs. our F3 0.543, F5 0.700) —
+  and by twelve automated measures (three latent, four waveform, tried
+  across `phase2a_sibilance.py` and `phase2a_sibilance_latent.py`) having
+  failed to separate clips this listener flagged from clips they called
+  clean on our own pool.
+- **Generator:** `py/benches/phase2a_sibilance_sources_bench.py`. Renders
+  nothing new — reuses `assets/audio_samples/` (repo-shipped) and bench 7's
+  pool clips.
+- **Inputs:** `assets/audio_samples/*.wav`,
+  `py/results/listening_sets/phase2a_baseline/`; leveled WAVs and
+  `manifest.json` written to
+  `py/results/listening_sets/phase2a_sibilance_sources/`.
+- **Results by source:**
+  - our previously-flagged clips (F3, F5): 2 of 2 "yes, clearly".
+  - our clean clips (F2, M3, M4): 0 yes, 1 maybe (M4), 2 no.
+  - upstream's own Supertonic-3 synthesis (6 clips): 1 yes (`keld`), 3
+    maybe, 2 no.
+  - upstream's human reference recordings (3 clips): 1 yes
+    (`luna_reference`), 1 maybe (`keld_reference`), 1 no
+    (`watson_reference`).
+- **Bench-design defect, found after the fact, and the fourth in this
+  series** (after bench 8's leading question, the WavLM bench's
+  mechanism-describing label, and bench 9's option set that did not span the
+  answer space): **the bench mixed in clips in languages the listener does
+  not speak, unmarked.** A `faster-whisper` language pass over every file in
+  `assets/audio_samples/` after publishing found:
+
+  | file | language | file | language |
+  |---|---|---|---|
+  | `alphonse_reference` | ko | `alphonse_supertonic3` | ko |
+  | `keld_reference` | ko | `keld_supertonic3` | **en** |
+  | `luna_reference` | ko | `luna_supertonic3` | **en** |
+  | `moka_reference` | ja | `moka_supertonic3` | ja |
+  | `nora_reference` | en | `nora_supertonic3` | en (no sibilant words) |
+  | `watson_reference` | ko | `watson_supertonic3` | ja |
+
+  All three human reference recordings in the bench are Korean, and three of
+  the six upstream-synthesis clips (`alphonse`, `moka`, `watson`) are Korean
+  or Japanese. This listener does not speak any of those languages and had
+  already said, unprompted, that they could not judge the foreign-language
+  clips reliably and suspected the Korean ones might simply lack the
+  artifact but that they were unsure why. A listener cannot judge a phonetic
+  detail — whether a specific consonant sounds over-driven — in a language
+  they do not know, so every verdict on a non-English clip in this bench is
+  uninterpretable for that question. That leaves only `keld_supertonic3`
+  (en) and `luna_supertonic3` (en) as informative among the six upstream
+  syntheses, plus `nora_supertonic3` (en) as a null-content control (no
+  sibilant words, so no over-drive verdict expected either way) — and none
+  of the three human references as informative, since none is in English.
+  **No English human reference recording with sibilant content exists
+  anywhere in the available assets** (`nora_reference` is English but has no
+  detected sibilant words). This is now a standing rule: check the language
+  of every clip against the listener's own before publishing a bench that
+  asks about phonetic detail, and mark or exclude anything they cannot
+  judge.
+- **What survives the correction:**
+  1. **The listener reproduced their own earlier sibilance judgements blind,
+     a fourth time.** Both clips flagged weeks earlier (F3, F5) came back
+     "yes, clearly" in a mixed set of unfamiliar voices and sentences; the
+     clean pool clips scored no or maybe. This consistency, now demonstrated
+     four times independently, is the most reliably established finding in
+     this project.
+  2. **The artifact also fires on upstream's own English-language
+     Supertonic-3 synthesis**, on voices and text entirely unrelated to our
+     presets: `keld_supertonic3` scored "yes, clearly", `luna_supertonic3`
+     "maybe". So sibilant over-drive is not specific to this fork or to its
+     presets — it reproduces on the original project's own showcase output,
+     on different voices and sentences, under the frozen engine both share.
+- **What does NOT survive, and is retracted:** an earlier reading of this
+  data treated `luna_reference` scoring "yes, clearly" as a genuine human
+  recording flagged for over-driven sibilance, concluding the phenomenon is
+  not synthesis-specific. That reading is invalid — `luna_reference` is
+  Korean, a language the listener does not speak, so that verdict is
+  uninterpretable, and with it the "not specific to synthesis" conclusion.
+  **The synthesis-versus-real-speech question this bench set out to answer
+  is unanswerable with the assets on hand, and stays open.** Upstream's
+  reference/synthesis pairs are cross-lingual by design (they demonstrate
+  zero-shot cross-language voice cloning), so there is no case in this set
+  where the same speaker's recorded and synthesised voice can be compared in
+  a language the listener understands. A real test needs English human
+  speech with sibilant content, recorded and synthesised from the same
+  speaker and the same or comparable text — not currently available. For
+  the same reason, the earlier proposal to reclassify F3/F5's sibilant
+  over-drive as "probably a voice/recording characteristic rather than an
+  engine defect" does not stand — it rested on the retracted human-recording
+  point. The descriptive measurement behind it (F3/F5 hold fricatives
+  roughly 50% longer than clean clips in this pool, 0.059-0.064 s against
+  0.031-0.048 s, `bench7_pool_reproduction` in
+  `py/results/phase2a/sibilance_latent.json`) still stands as description;
+  whether it reflects a defect or an inherent characteristic of those
+  presets is undetermined, not settled either way.
+- **Verdict:** reclassifies the sibilance thread without resolving it.
+  Sibilant over-drive is not fork-specific or preset-specific — it now shows
+  up in upstream's own English synthesis of unrelated voices — but whether
+  it is an engine defect or a property some voices simply have remains open,
+  because the one comparison that could settle it (matched-language,
+  matched-speaker human vs. synthesis) does not exist in the available
+  assets. The twelve automated measures that failed to separate flagged
+  from clean are unresolved by this bench too; it explains why this bench
+  cannot adjudicate defect-vs-characteristic, not why those measures fail.
+  Caveats: three human references and two flagged clips is a very small
+  sample; the human recordings are 48 kHz studio captures against 44.1 kHz
+  engine output, so audio-quality cues may colour judgements independent of
+  language; and it remains one listener throughout.
