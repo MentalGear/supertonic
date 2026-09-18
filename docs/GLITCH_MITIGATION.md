@@ -6,9 +6,11 @@ session, what was tried and contradicted, what has a partial fix in place,
 and what is proposed but untested. Read
 [LISTENING_BENCHES.md](LISTENING_BENCHES.md) alongside this — bench 6 is the
 listener evidence this doc starts from, bench 7 is the baseline rate
-measurement it points to (now answered), and bench 8 is the speed
+measurement it points to (now answered), bench 8 is the speed
 root-cause investigation behind the fix below (partially amended by bench 7 —
-see below).
+see below), and bench 9 adds an unplanned observation that a `style_ttl`
+perturbation may relieve rather than cause the end-of-utterance artifact
+(see item 5 under "Proposed, not established").
 
 ## The finding
 
@@ -267,6 +269,22 @@ Each entry states its cost and how it would be tested.
    properly test which direction the effect runs, or restricting the
    distance to the words the cross-seed analysis flags as unstable rather
    than scoring the whole utterance.
+5. **Perturbing `style_ttl` may relieve the end-of-utterance artifact.**
+   Unplanned observation, not a proposal that was tested for this — bench 9
+   (Phase 2a preset-span/random-control check, eps=0.20, speed=1.05,
+   `py/benches/phase2a_presetspan_bench.py`, see
+   [LISTENING_BENCHES.md](LISTENING_BENCHES.md#9-phase-2a--preset-span-perturbation-same-voice-check))
+   asked a listener to compare perturbed M1 renders against an unperturbed
+   M1 reference for identity and defects, and got four free-text notes
+   volunteering that the *perturbed* clip had less end-of-utterance
+   distortion than the reference, plus one calling the perturbed clip the
+   "clearest/crispest." The reference condition and artifact location match
+   the compression family traced above, so this reads as the same
+   mechanism, moved by a `style_ttl` shift rather than by `speed` or
+   `TOTAL_STEP`. Cost to test properly: a paired bench, same seed and text,
+   perturbed vs. unperturbed, asking directly whether the artifact is
+   present in each — bench 9 did not ask that question, so this is a
+   direction to test, not a result to act on.
 
 ## The baseline artifact rate (measured)
 

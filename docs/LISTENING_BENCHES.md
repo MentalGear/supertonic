@@ -325,3 +325,70 @@ exist locally.
   duration prediction, and matching pre-November-2025 behaviour — rather
   than on this bench. See `docs/GLITCH_MITIGATION.md` and
   `docs/upstream_pr_speed_default.md`.
+
+## 9. Phase 2a — Preset-span perturbation, same-voice check
+
+- **Artifact:** not published (per task instructions).
+- **Contains:** ten clips in five blind A/B groups, each pairing an
+  unperturbed M1 reference against one perturbed M1 render — one group per
+  text (pangram, sibilant-heavy sentence, woodchuck, two longer sentences) —
+  with the perturbation drawn either from the preset-span subspace or from a
+  random-control subspace, eps=0.20, speed=1.05. A 4-way forced-choice
+  question plus free text per clip.
+- **Generator:** `py/benches/phase2a_presetspan_bench.py`.
+- **Inputs:** `py/results/phase2b_presetspan/{preset_span,random_control}/`,
+  `geometry.json`; WAVs in
+  `py/results/listening_sets/phase2a_presetspan/`.
+- **Bench-design defect, found and recorded here so it is not repeated:**
+  the four forced-choice options offered were different-voice-clean /
+  same-voice-wrong / different-voice-AND-wrong / no-difference. None of them
+  is "same voice, audibly different, nothing wrong" — the answer the
+  listener actually had on all ten clips — so every verdict landed on
+  same-voice-wrong by elimination, and only the free-text field recovered
+  what was actually heard. Verbatim, across clips: "not wrong, all fine,
+  only it seems both samples apply different strength of pronunciation on
+  'jumps' and 'dog'"; "again same voice just other pronunciation, maybe
+  overall a bit rushier"; "voice is the same, but even better than original
+  (original has bit distortion near the end, this one feels like less)"
+  (three separate clips, worded similarly); "same voice, bit different
+  pronunciation emphasis (just different, not worse)"; "voice is the same,
+  but this is the clearest / crispest version." This is the third
+  bench-design error in the series, after bench 8's leading question and the
+  WavLM bench's mechanism-describing label — see the new CLAUDE.md rule on
+  option-set coverage. The generator now offers a fifth option, "the same
+  voice, audibly different, nothing wrong with it," added directly above the
+  affected `Q1_OPTIONS` in the script with a comment citing this entry.
+- **Findings:**
+  1. **No identity change in either condition** — ten of ten free-text
+     verdicts say "same voice."
+  2. **Preset-span and random-control are indistinguishable by ear**,
+     described in the same terms group by group, so preset-span's +0.18
+     mean R^2 advantage over random control (0.9376 vs 0.7593, Phase 2a's
+     capacity measurement) does not translate into an audible difference at
+     eps=0.20 — the same R^2-versus-audibility decoupling bench 6 found,
+     now on the phase's strongest numerical result.
+  3. **The audible effect is emphasis, not timbre.** Multiple notes name
+     specific words ("jumps", "dog") and describe changed emphasis or
+     rhythm — consistent with `style_ttl`'s per-text-position reach through
+     `text_encoder` (see the CLAUDE.md project note on where `style_ttl`
+     enters), now confirmed as the dominant audible effect at this
+     magnitude.
+  4. **Perturbed clips were repeatedly judged better than the unperturbed
+     reference** — four notes report less end-of-utterance distortion, one
+     "clearest/crispest." The reference is unperturbed M1 at speed=1.05,
+     where the compression artifact traced in bench 8 and
+     `docs/GLITCH_MITIGATION.md` is expected near the end of the utterance.
+     Recorded as an observation worth its own test, not a conclusion:
+     perturbing `style_ttl` may relieve that artifact rather than cause one.
+  5. **Scale context:** the perturbation's Frobenius norm (0.98) is roughly
+     a third of the nearest real preset-to-M1 distance (1.85-3.49, Phase 0),
+     so this tested the axis at a fraction of the scale Phase 0 already
+     validated as giving distinct voices — not a refutation of the axis at
+     full scale, a measurement at a smaller one.
+- **Verdict:** at eps=0.20, `style_ttl` perturbations along either subspace
+  read as the same voice, audibly different (mainly in emphasis), and not
+  degraded — answering task 2a-5 for this magnitude. Whether degradation
+  appears at larger eps, or how the preset-span/random-control gap in
+  probe-recoverability might still separate by ear at a different scale,
+  remains open. See `new-plan.md`'s Phase 2a-5 result note for how this
+  folds into the roadmap.

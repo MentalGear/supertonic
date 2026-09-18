@@ -150,6 +150,19 @@ inline burns the context the main loop needs for judgment.
   mechanism that produced it: a clip labelled "reads no audio at all"
   (describing the predictor) was reasonably misread as describing the clip,
   which is obviously synthesized speech.
+- **A bench's forced-choice options must span the answer space, and the
+  free-text field is what catches it when they don't.** Bench 9 offered four
+  options — different voice clean / same voice wrong / different voice AND
+  wrong / no difference — with no neutral "different but fine" box, so all
+  ten listener verdicts were forced into "same voice with something wrong in
+  it" even though every free-text note said nothing was wrong, and several
+  said the perturbed clip was better than the reference. The real verdict
+  only survived because free text was there to contradict the forced
+  choice. Before publishing, enumerate the answers a listener could
+  plausibly have — including "different but fine" — and never ship a bench
+  whose options lack a neutral-difference choice. This sits alongside the
+  bullets above on asking the open question and on describing what the
+  listener hears, not the mechanism.
 - **Compare spectrograms before you compare aggregates.** A scalar summary —
   median F0, mean spectral flatness, voiced fraction, WER — collapses both time
   and frequency, so a change that is localized in time (per-word emphasis) or

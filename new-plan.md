@@ -1159,6 +1159,26 @@ cheaper per step but constrains nothing in `vector_estimator`, which reads
 `style_ttl` again at every denoising step — that makes it a warm start at
 most, never a substitute for the full-graph refinement pass.
 
+### Result (bench 9, 2026-09-18): perturbations at eps=0.20 read as the same voice, audibly different, not degraded — task 2a-5's question answered for this magnitude
+
+Ten clips, blind, each a preset-span or random-control perturbation of M1 at
+eps=0.20 against an unperturbed M1 reference, speed=1.05. Ten of ten came
+back "same voice" in free text, and every note described a clean difference
+(changed word emphasis, e.g. "jumps", "dog") rather than a defect — several
+rated the perturbed clip *better* than the unperturbed reference (less
+end-of-utterance distortion). Preset-span and random-control read
+indistinguishably by ear, so preset-span's +0.18 mean R^2 advantage over
+random control (Phase 2a's capacity work) does not translate into an audible
+gap at this magnitude — R^2 and audibility decouple here the same way bench 6
+found. This is a first answer to 2a-5 at eps=0.20 specifically (a step about
+a third of the Frobenius norm of the nearest real preset), not a general one:
+degradation at larger eps, or at the full preset-to-preset scale Phase 0
+already validated, is untested. See bench 9 in
+[LISTENING_BENCHES.md](docs/LISTENING_BENCHES.md) for the full writeup,
+including a bench-design defect (the option set forced all ten verdicts into
+"something wrong" until free text corrected it) recorded there and folded
+into the new CLAUDE.md rule on option-set coverage.
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?

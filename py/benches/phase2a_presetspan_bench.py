@@ -91,9 +91,19 @@ TEXT_IDXS = [0, 1, 3, 5, 6]
 SAMPLE_SEED = 20270913   # which held-out (test-split) sample represents each text, per condition
 ORDER_SEED = 20270914    # blind A/B display order per group
 
+# Bench 9 forced all ten listener verdicts into "same voice with something
+# wrong in it" because that was the closest available box for an outcome the
+# original 4-way option set did not offer at all: same voice, audibly
+# different, nothing wrong. The listener's free-text notes on every clip
+# contradicted the forced choice ("not wrong, all fine, only ... different
+# strength of pronunciation"; "even better than original"; "this feels like
+# the best as almost no distortion"), which is how the real verdict survived
+# a defective option set. Do not simplify this back to 4 options — the
+# neutral-difference choice is load-bearing, not decorative.
 Q1_OPTIONS = [
-    ("different_clean", "A different voice, but clean speech"),
-    ("same_wrong", "The same voice with something wrong in it"),
+    ("different_clean", "A different voice, and clean speech"),
+    ("same_different", "The same voice, audibly different, nothing wrong with it"),
+    ("same_wrong", "The same voice, with something wrong in it"),
     ("different_wrong", "A different voice AND something wrong"),
     ("no_difference", "No difference I can hear"),
 ]
@@ -101,7 +111,7 @@ Q1_OPTIONS = [
 # Persists per-clip verdicts to the artifact's `db` capability at
 # `verdicts/<clip_id>` and the page-level free-text box at `verdicts/_overall`.
 # Mirrors phase2a_baseline_bench.py / phase2a_deessing_bench.py's DB_SCRIPT,
-# with a 4-way forced-choice Q1 instead of a 3-way one. `condition` is stashed
+# with a 5-way forced-choice Q1 instead of a 3-way one. `condition` is stashed
 # into the saved doc for later analysis (matching those scripts' is_check /
 # is_control pattern) but is never rendered into visible page text.
 DB_SCRIPT = r"""(function () {
