@@ -1236,6 +1236,76 @@ could settle engine-defect-vs-voice-characteristic needs assets this project
 does not have. **The sibilance/glitch-mitigation line of work is done for
 now; Phase 3 (below) and the VCTK extraction are the live work.**
 
+### Result (2026-09-23): `vector_estimator`'s discarded attention outputs are readable, and give `style_ttl`'s per-position reach a direct instrument
+
+`assets/onnx/vector_estimator.onnx` declares one output, but computes and
+discards 8 `Softmax` tensors along the way. Appending them to `graph.output`
+and re-saving — no retraining, no gradient, no `onnx2torch` — makes them
+readable. Verified once, on this machine: preset M1, seed 0, 8 steps,
+`speed=1.0`, "The quick brown fox jumps over the lazy dog.", predicted
+duration 3.25 s, `L=47` latent frames, `T=53` text units. Full writeup,
+including the export snippet, the shape table, the head-selection method,
+and what it does not reach, is in
+[docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md).
+
+Two families, disambiguated by shape: `main_blocks.{3,9,15,21}/attn/Softmax`
+at `(8, 2, 47, 53)` attends over text positions, and
+`main_blocks.{5,11,17,23}/attention/Softmax` at `(2, 2, 47, 50)` attends over
+`style_ttl`'s 50 rows. The text family contains a near-perfect monotonic
+alignment (best: `main_blocks.9/attn` head 1 stream 1, Spearman rho = +1.000
+between frame index and argmax text position), read off to word spans at the
+vocoder's native 69.66 ms frame resolution — the model aligning its own
+generated audio to the text it was given, not forced alignment of an
+external recording, and not transcription (see the doc's "what this does not
+reach" section for why neither of those follows from this).
+
+The style family is the more consequential half here. Each latent frame
+computes its own softmax distribution over `style_ttl`'s 50 rows — measured,
+not merely re-inferred: mean total-variation distance of a frame's row
+distribution from the utterance mean is 0.283 (0 would mean a global read),
+mean effective row count `exp(entropy)` is 34.6 of 50. **This directly
+confirms, for the first time as a measurement rather than an inference, the
+per-position reach that CLAUDE.md's project notes and bench 9's emphasis
+finding above both pointed at without a mechanism in hand — `style_ttl` is
+read differently at different output frames, which is how a perturbation to
+it can land on some words more than others.**
+
+This also revises, rather than overturns, what CLAUDE.md records about
+`style_dp` and per-token duration: the frozen graph genuinely emits a single
+scalar duration, and this instrument does not add per-token duration control
+— it reads the text family's alignment off `vector_estimator`'s attention,
+where CLAUDE.md's note that "text and latent are aligned inside the frozen
+`vector_estimator`" was describing the exported graph's *declared* boundary,
+not a property of the weights. **The conclusion that rate and rhythm control
+has to come through `style_ttl`, since `style_dp` is a fixed scalar, still
+stands** — nothing here gives duration a second lever — but that conclusion
+now has an instrument for the `style_ttl` side of it: the style-attention
+maps show, per frame, which rows a perturbation is actually landing on when
+it changes emphasis, rather than leaving the mechanism to be inferred from
+audible side effects after the fact.
+
+**Cheapest next experiment, and it needs no new renders, no listener, and no
+GPU:** the perturbation ladder corpora already generated for Phase 2b and
+Phase 2a (`py/results/phase2b/`, `py/results/phase2b_subspace/`, and the
+listening-set manifests referenced above) can be re-run through the
+instrumented graph and their style-row attention maps read directly, since
+the tensors and inputs already exist on disk — only the forward pass needs
+repeating, with the extra outputs requested. One caveat on "already on
+disk": `py/results/` is gitignored, so those corpora live only on the
+container that generated them. `subspace.npz` plus `manifest.json` are
+enough to reconstruct the style tensors (`unit_rows(P + c @ B)`) rather than
+the audio, so the experiment survives a regenerate — but budget for that if
+the container is gone. That would let the emphasis
+effect bench 9 heard, and the per-word energy redistribution measured in the
+2b prosody correction, be checked against which `style_ttl` rows the
+affected frames were actually attending to when the perturbation moved them
+— a test of the mechanism, not just its audible consequence, on data this
+project already has.
+
+Scope, restated from the doc: one voice, one language, one sentence, one
+seed. Whether the stream-1/stream-0 split and the specific winning nodes
+hold on a different voice or language is untested.
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?

@@ -29,6 +29,17 @@
 > match each other (different PRNG algorithms) — that's expected, and not
 > something to "fix".
 
+> **Fork-specific addition — word-level timestamps and a style-attention
+> readout, from the model's own discarded outputs.** `vector_estimator.onnx`
+> computes attention maps it never declares as outputs; exposing them (no
+> retraining, no gradients) lets this fork read back where each word landed
+> in its own generated audio, and how each output frame weighted the 50 rows
+> of `style_ttl`. This aligns the model's *own* synthesized speech to the
+> text it was given — it does not forced-align external recordings or
+> perform transcription. See
+> [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) for what was
+> measured, its limits, and how to use it.
+
 <p align="center">
   <img src="img/Supertonic3_HeroImage.png" alt="Supertonic 3 Banner">
 </p>
