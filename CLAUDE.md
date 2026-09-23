@@ -59,11 +59,34 @@ inline burns the context the main loop needs for judgment.
   `style_dp`'s 128 numbers is observable only through that one value — which
   `speed` already sets directly, at `py/helper.py:326`
   (`dur_onnx = dur_onnx / speed`). Treat timing as an effective scalar, not a
-  second control surface. There is no per-token duration anywhere in the
-  Python pipeline to intercept: text and latent are aligned inside the frozen
-  `vector_estimator`, and only `text_mask`/`latent_mask` cross the boundary.
-  Rate and rhythm control, if it is reachable at all, has to come through
-  `style_ttl`.
+  second control surface. Rate and rhythm control, if it is reachable at all,
+  has to come through `style_ttl`.
+- **A graph's declared outputs are the exporter's choice, not a property of
+  the weights — "frozen" bounds what you can change, never what you can
+  read.** This file previously recorded that "there is no per-token duration
+  anywhere in the Python pipeline to intercept: text and latent are aligned
+  inside the frozen `vector_estimator`, and only `text_mask`/`latent_mask`
+  cross the boundary," and concluded per-token alignment was unreachable.
+  That is true of `vector_estimator.onnx` as exported and false of the model
+  inside it. The graph has 1004 nodes and one declared output; appending its
+  8 `Softmax` outputs to `graph.output` and re-saving exposes both of its
+  attention families, with no retraining, no gradients and no onnx2torch.
+  `main_blocks.{3,9,15,21}/attn` is `(heads=8, 2, latent_frames, text_units)`
+  — the text alignment, monotonic at Spearman `rho = +1.000` on the head the
+  tool selects — and `main_blocks.{5,11,17,23}/attention` is
+  `(2, 2, latent_frames, 50)`, each latent frame's own softmax over the 50
+  rows of `style_ttl`. So the rows are attention keys and values read
+  time-varyingly, which is the *mechanism* behind the per-position reach
+  guessed at above, and it is now measurable rather than inferred: on the
+  verified render each frame's row distribution sits a mean total-variation
+  distance of 0.283 (range 0.173–0.555) from the utterance mean, using
+  between 10.4 and 43.6 effective rows of 50. `py/attention.py` ships this;
+  see [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) for what it does
+  and does not reach — it aligns the model's own generated audio only, and
+  is no route to transcription or to aligning external recordings.
+  The general lesson is the one that cost the most here: before recording
+  that something inside a frozen graph is unreachable, check whether it is
+  merely unexported.
 - **This fork's `speed` default is `1.0`, not upstream's `1.05`, on purpose.**
   `1.05` divides the duration predictor's own trained estimate on every
   default render, a change upstream introduced with the parameter itself
@@ -169,6 +192,24 @@ inline burns the context the main loop needs for judgment.
   whose options lack a neutral-difference choice. This sits alongside the
   bullets above on asking the open question and on describing what the
   listener hears, not the mechanism.
+- **Every clip in a comparison must be in the same language as the thing
+  under test.** Bench 11 set out to decide whether the sibilant over-drive is
+  specific to this fork by comparing synthesized clips against human
+  reference recordings — and all three human references were Korean, while
+  the material under test was English. The listener said as much: the
+  foreign language made it impossible to tell whether the missing over-drive
+  was a property of the recording or of the language. The headline finding
+  was retracted. A language difference is a confound that no amount of
+  listening discipline recovers from, so check the language of every asset in
+  a group before it is published, not after a verdict comes back.
+- **Put a known-good and a known-bad anchor in every clip group.** Bench 13
+  asked about a clip that benches 7 and 8 had both flagged, and got the
+  opposite verdict on audio verified bit-identical (waveform correlation
+  1.00000000). Without anchors there is no way to tell a real change of
+  perception from a drifting criterion, and the two were only separable here
+  because the same audio happened to be re-served. Anchors cost two clips per
+  group and make drift visible in the verdicts themselves. Randomize their
+  position with the rest.
 - **Compare spectrograms before you compare aggregates.** A scalar summary —
   median F0, mean spectral flatness, voiced fraction, WER — collapses both time
   and frequency, so a change that is localized in time (per-word emphasis) or
