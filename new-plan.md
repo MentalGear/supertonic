@@ -1252,7 +1252,7 @@ Two families, disambiguated by shape: `main_blocks.{3,9,15,21}/attn/Softmax`
 at `(8, 2, 47, 53)` attends over text positions, and
 `main_blocks.{5,11,17,23}/attention/Softmax` at `(2, 2, 47, 50)` attends over
 `style_ttl`'s 50 rows. The text family contains a near-perfect monotonic
-alignment (best: `main_blocks.9/attn` head 1 stream 1, Spearman rho = +1.000
+alignment (best: `main_blocks.9/attn` head 1 stream 1, Spearman rho = 0.9995
 between frame index and argmax text position), read off to word spans at the
 vocoder's native 69.66 ms frame resolution — the model aligning its own
 generated audio to the text it was given, not forced alignment of an

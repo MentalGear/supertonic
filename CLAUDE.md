@@ -72,7 +72,7 @@ inline burns the context the main loop needs for judgment.
   8 `Softmax` outputs to `graph.output` and re-saving exposes both of its
   attention families, with no retraining, no gradients and no onnx2torch.
   `main_blocks.{3,9,15,21}/attn` is `(heads=8, 2, latent_frames, text_units)`
-  — the text alignment, monotonic at Spearman `rho = +1.000` on the head the
+  — the text alignment, monotonic at Spearman `rho = 0.9995` on the head the
   tool selects — and `main_blocks.{5,11,17,23}/attention` is
   `(2, 2, latent_frames, 50)`, each latent frame's own softmax over the 50
   rows of `style_ttl`. So the rows are attention keys and values read

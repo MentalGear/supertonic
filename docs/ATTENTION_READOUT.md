@@ -80,7 +80,7 @@ stream) combinations on the verification render:
 
 | Node | Head | Stream | Spearman rho |
 |---|---|---|---|
-| `main_blocks.9/attn` | 1 | 1 | **+1.000** |
+| `main_blocks.9/attn` | 1 | 1 | **0.9995** |
 | `main_blocks.9/attn` | 4 | 1 | +0.998 |
 | `main_blocks.21/attn` | 3 | 1 | +0.993 |
 | `main_blocks.3/attn` | 3 | 1 | +0.931 |
@@ -106,7 +106,7 @@ frames at `chunk_compress_factor=6`, giving 3072 samples per latent frame at
 
 | Word | Start (s) | End (s) |
 |---|---|---|
-| The *(absorbs the `<en>` tag)* | 0.00 | 0.49 |
+| The | 0.35 | 0.49 |
 | quick | 0.56 | 0.91 |
 | brown | 0.91 | 1.18 |
 | fox | 1.25 | 1.46 |
@@ -118,9 +118,16 @@ frames at `chunk_compress_factor=6`, giving 3072 samples per latent frame at
 
 "dog" reads as a single 69.66 ms frame — a real limit of this readout, not a
 rendering quirk: boundaries quantize to the frame grid, so sub-frame timing
-is not recoverable this way. Text is tokenized character-level and wrapped in
-literal `<en>`/`</en>` tag characters, which is why the first word's span
-absorbs the opening tag.
+is not recoverable this way.
+
+Text is tokenized character-level and wrapped in literal `<en>`/`</en>` tag
+characters. `word_spans()` treats those tag characters as transparent, so
+"The" starts at 0.35 rather than at 0.00: the frames before it are the
+opening tag, which is not a word. Tag detection is by regex over the joined
+token string, not a hardcoded "en", so it holds for other language codes.
+Frames are half-open intervals `[f * frame_seconds, (f + 1) * frame_seconds)`
+— without the `+1` on the end frame, a one-frame word like "dog" collapses to
+a zero-width span and adjacent words stop sharing their boundary.
 
 ## The style family: `style_ttl` is read time-varyingly, not globally
 
@@ -158,11 +165,12 @@ go look for it directly, on existing renders, with no new audio.
 
 ## Using the module and CLI
 
-Documented against the specification given for this work; see "What was
-documented from spec" below for what that means in practice.
+`py/` is not a package, so import the way the tests do — put `py/` on the
+path first.
 
 ```python
-from py.attention import export_attention_graph, analyze, DEFAULT_ATTENTION_PATH
+import sys; sys.path.insert(0, "py")
+from attention import export_attention_graph, analyze, DEFAULT_ATTENTION_PATH
 
 export_attention_graph("assets/onnx/vector_estimator.onnx", DEFAULT_ATTENTION_PATH)
 
@@ -172,7 +180,7 @@ wav, alignment, style_attn = analyze(
 )
 
 alignment.word_spans()          # the table above
-alignment.spearman               # per (node, head, stream) rho used to pick the winner
+alignment.spearman               # the winning head's rho (0.9995 on this render)
 style_attn.frame_divergence()    # per-frame total-variation distance from the mean
 style_attn.effective_rows()      # per-frame exp(entropy)
 ```
@@ -255,21 +263,25 @@ either direction.
   style family varies per frame) as established, and every specific number
   above as one data point rather than a constant of the model.
 
-## What was documented from spec, not from reading finished code
+## Provenance of the numbers in this doc
 
-At the time this doc was written, `py/attention.py` and `py/test_attention.py`
-did not yet exist in the repository (a concurrent task was building them).
-The "Using the module and CLI," "Cost," and "The drift guard" sections above
-describe the API and behavior as specified for that work, not as read from a
-finished implementation. If the shipped module's names, return types, or
-defaults differ from what is written here, this doc should be reconciled
-against the actual file rather than treated as the source of truth for the
-API surface.
+Every figure above was produced by instrumented inference against
+`assets/onnx/vector_estimator.onnx` on CPU — preset M1, seed 0, 8 steps,
+`speed=1.0` — and independently reproduced by running `py/attention.py`'s CLI
+after the module was written. The two runs agree on the chosen node, head and
+stream, on all nine word spans, and on both style-attention summaries.
 
-The findings sections above — the two attention families, the alignment
-ranking, the word spans, and the style-row statistics — are not
-spec-dependent, but they were not re-derived while writing this doc either.
-Every number in them was produced by instrumented inference runs against
-`assets/onnx/vector_estimator.onnx` in the session that made the finding, and
-transcribed here. `py/test_attention.py` is what re-checks them
-mechanically; the doc is a record, not the verification.
+Two figures were corrected during that reconciliation, and the originals are
+recorded here so the earlier commits can be read honestly:
+
+- The winning head's Spearman rho is **0.9995**, not `+1.000`. The first
+  measurement was printed at three decimal places, where 0.9995 displays as
+  `+1.000`; it was quoted from that display. The alignment is very nearly
+  monotonic, not exactly so.
+- The first word's span is **0.35–0.49 s**, not `0.00–0.49`. The original
+  ad-hoc script counted the `<en>` tag's frames into the first word.
+  `word_spans()` treats tag characters as transparent, which is the correct
+  behaviour and changes the number.
+
+`py/test_attention.py` is what re-checks these mechanically. The doc is a
+record, not the verification.
