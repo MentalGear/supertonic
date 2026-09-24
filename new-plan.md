@@ -1339,7 +1339,9 @@ between-preset — a different voice barely exceeds seed noise), and
 The forced ladder (`ttl_K4`/`K16`/`K64`, N=80 each, one seed), run past the
 gate and labelled as such, sits entirely inside that floor: TV from base
 0.00846 mean is 0.26x the seed floor with 0 of 240 samples exceeding the
-floor's maximum; frame TV is 0.16x the floor. It is monotone in K (TV
+floor's maximum; frame TV is 0.16x the floor. **This 0.26x-the-floor reading
+is corrected in the 2026-09-25 section below — it compares a paired
+statistic to an unpaired floor and is not a valid comparison.** It is monotone in K (TV
 0.00647/0.00886/0.01004) and reproduces on a longer sentence (L=63: ladder TV
 0.0096 vs. a 0.0276 floor), but timing shows no measurable movement (max
 word-boundary shift 73.7 ms mean, mean shift 11.0 ms — both below the
@@ -1391,6 +1393,120 @@ seeds per style could shrink the floor enough to separate from the
 between-preset distribution, but this is untested. It costs about 24 renders
 per style to check, all through the existing instrumented graph with no new
 listening and no embedding model.
+
+### Result (2026-09-25): the "0.26x the floor" reading above was a paired-vs-unpaired comparison error; seed-averaging works but costs too much to use
+
+**The correction, stated first because it changes what the 2026-09-24
+section above means.** That section's forced-ladder TV of 0.00846 was
+measured with base and perturbed both rendered at a **shared vocoder
+seed** — a paired, common-random-numbers design. With the pipeline
+deterministic under a seed (confirmed directly: a shared seed with
+`style_dp` pinned gives an identical `noisy_latent` whatever the style is),
+that design's own null is **exactly zero**, not the 0.0328 it was divided
+by. The 0.0328 "floor" is the *unpaired* NULL from the same calibration —
+`base_ttl` against itself at two *different* seeds. Dividing a paired
+statistic by an unpaired floor compares two different null distributions;
+"0.26x the seed floor" is not a signal-to-noise number for either design,
+and the conclusion drawn from it — that the perturbation did not move
+attention measurably — does not follow from the comparison that produced
+it.
+
+`py/phase3_seed_averaging.py` (committed `e9ed1db`, 1410 renders)
+reproduces the paired ladder measurement directly, on different corpus
+samples: mean paired TV **0.00840**, essentially the original 0.00846. The
+number replicates; the framing around it did not.
+
+Read paired, against its own (zero) null, the perturbation signal is real
+and reproducible:
+
+- mean cosine between disjoint-seed-half mean-difference vectors:
+  **0.726 +/- 0.208** (median 0.802, p05 0.398, n=24 ladder styles)
+- per-style paired-TV ranking survives an independent seed-half split:
+  Spearman **0.587**, p=0.0026
+- all 24 ladder styles show positive unbiased signal energy; none
+  non-positive
+- pairing is worth **14.75x** in noise energy versus an unpaired
+  comparison — one paired render buys what ~15 unpaired renders do
+
+**What does not change:** SNR at a single seed is **0.151** (range
+0.040-0.391), so 87% of the paired difference's energy is still
+seed-specific — the same instability that flipped the active-row finding's
+sign at a second seed in the 2026-09-24 section above, and that warning
+stands unchanged. What changes is the reason: not that the perturbation
+fails to move attention, but that a single seed cannot see past its own
+noise. Also unchanged: the unpaired calibration (AUC 0.826 utterance /
+0.355 frame-resolved) is still correct as a statement about that design.
+Two styles separating trivially at N=1 in a paired design, because a paired
+null is zero by construction, is a property of pairing, not evidence
+against the unpaired calibration failure.
+
+**The seed-averaging result the section above asked for.** Same run: primary
+text, `speed=1.05`, `style_dp` pinned to M1's so `L=45` is constant across
+all 1410 renders, 0.821 s/render measured. Sanity: `base_ttl` equals M1
+exactly, same-seed renders are bit-identical, and a shared seed with
+`style_dp` pinned gives an identical `noisy_latent` whatever the style is.
+
+Part A, 10 shipped presets x 64 seeds each ("same" = two disjoint N-seed
+averages of one preset; "different" = N-seed averages of two presets on
+disjoint seed sets), against a pre-registered criterion of AUC >= 0.99 and
+disjoint central-95% intervals:
+
+| N | same mean +/- sd | different mean +/- sd | AUC | separates |
+|---|---|---|---|---|
+| 1 | 0.03542 +/- 0.01529 | 0.06139 +/- 0.01757 | 0.875 | no |
+| 2 | 0.02468 +/- 0.01003 | 0.05593 +/- 0.01660 | 0.955 | no |
+| 4 | 0.01707 +/- 0.00703 | 0.05160 +/- 0.01399 | 0.991 | no (intervals overlap) |
+| 8 | 0.01248 +/- 0.00520 | 0.05035 +/- 0.01428 | 0.998 | yes |
+| 16 | 0.00878 +/- 0.00361 | 0.04930 +/- 0.01366 | 1.000 | yes |
+| 32 | 0.00602 +/- 0.00252 | 0.04856 +/- 0.01324 | 1.000 | yes |
+
+At N=8's "yes," the full min/max ranges still overlap — 36% of
+different-pairs sit inside the same-style range — and only N=32 clears the
+stricter full-range test (0% overlap). No bias floor: the same-style
+distance is pure averagable noise, power-law exponent -0.5096 at
+R^2=0.99959; the free two-parameter fit `a/sqrt(N) + c` puts the asymptote
+at c=1.4e-5 (bootstrap CI95 `[1.3e-6, 2.8e-4]`) — indistinguishable from
+zero and 30-600x below the ladder's 0.00846. "Averaging cannot get there at
+any N" is false; the different-preset side converges to 0.0483, matching
+the direct 64-seed computation (0.0482 +/- 0.0134). What kills the approach
+is the price, not a floor.
+
+Part B, 24 `ttl_K64` ladder styles x 32 seeds against base x 64 seeds
+(unpaired design): AUC by N — 1: 0.507, 2: 0.528, 4: 0.452, 8: 0.502,
+16: 0.568, 32: 0.664. Never leaves the coin-flip region until after N=16 and
+does not separate at 32. Fitted asymptotes: null ~0.000145 (~0), ladder
+0.00301 — a perturbation buys about 1/16 of what a different shipped voice
+buys. (The N=4 dip to 0.452 is a condition-matching artifact: ladder styles
+are 9.3% less seed-noisy than base, deflating the test side by a predicted
+~2.4% — an instrument-level lesson, not a sign flip in the underlying
+effect.) Extrapolated N to separate: an emulator gives ~512, bias-corrected
+to ~1330 (its asymptote overstates the fitted one by 1.61x, and N scales as
+1/TV^2); an independent analytic route gives a median of 290 per style, p95
+1093, and 4747 for the weakest of the 24 — the pooled criterion is governed
+by that tail. Frobenius distance from base is constant across the 24
+(0.96537 +/- 0.00003), so the ~70x spread in required N is not a magnitude
+effect.
+
+**Cost.** At 0.821 s/render: N=1 costs 3.3 min for the 240-sample ladder,
+N=32 costs 1.8 h, N=512 costs 28 h, and the bias-corrected N=1332 costs
+73 h; the full 1280-sample corpus at N=1332 costs 389 h (~16 days of CPU). A
+WavLM probe pass over the same 1280-sample corpus (one render each) costs
+0.90 h, ~430x cheaper. A human listening bench covers ~20 clips (31 s of
+rendering) plus 10-20 minutes of listening, does not scale past ~20
+samples, and answers a higher-authority question. The paired design above
+is the cheapest route to any usable signal: reaching a 2:1 signal/noise
+amplitude margin needs a median of 32 paired seeds (64 renders) per sample —
+3.5 h for 240 samples, 18.5 h for 1280, 20-40x cheaper than unpaired
+averaging.
+
+**Verdict: do not build unpaired seed-averaging.** Even the paired variant
+costs ~20x a WavLM pass to deliver a statistic nobody has calibrated
+against audibility. The one defensible use is narrow and cheap: a paired
+2-render A/B to confirm a perturbation moved attention at all (6.6 min for
+240 samples), carrying the caveat that 87% of a single seed's paired
+difference is still seed-specific. Full writeup, including the
+paired-vs-unpaired correction, in
+[docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md).
 
 ## Phase 3: Deriving the Axes
 

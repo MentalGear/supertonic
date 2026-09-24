@@ -257,7 +257,39 @@ inline burns the context the main loop needs for judgment.
   produced the backwards AUC), and give every statistic you intend to cite
   its own floor, not just the headline distance. See
   [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) and
-  `py/phase3_attention_ladder.py`.
+  `py/phase3_attention_ladder.py`. One reading from that same run was itself
+  wrong and is corrected in the next bullet — the calibration was sound, the
+  comparison drawn against it was not.
+- **A paired statistic's null is zero. Never divide it by an unpaired
+  floor.** Task #18 measured the ladder's distance from base with both
+  renders at a *shared* vocoder seed, got 0.00846, and read it as "0.26x the
+  noise floor" — where that floor, 0.0328, came from rendering one style at
+  two *different* seeds. Under a shared seed the pipeline is deterministic,
+  so an unperturbed pair scores exactly 0; the right denominator was zero and
+  the perturbation was being called invisible against a yardstick built for a
+  different design. `py/phase3_seed_averaging.py` reproduces the measurement
+  at 0.00840 and shows the signal is real: the mean difference vector has
+  cosine 0.726 +/- 0.208 between disjoint seed halves, the per-style ranking
+  survives the split at Spearman 0.587 (p=0.0026), and every one of 24 styles
+  has positive unbiased signal energy. Pairing is also simply better
+  instrumentation here — 14.75x variance reduction, one paired render worth
+  about fifteen unpaired ones — so prefer common random numbers whenever the
+  comparison allows it, and state which design a floor belongs to whenever
+  you quote one. What survives unchanged: single-seed SNR is 0.151, so 87% of
+  a paired difference is still seed-specific, which is the bullet above.
+- **Averaging is bounded by price, not by a floor — check which before
+  concluding either.** Seed-averaging the attention profile shrinks the
+  same-style distance as `a/sqrt(N)` with exponent -0.5096 (R^2 0.99959) and
+  a fitted asymptote of 1.4e-5, CI95 [1.3e-6, 2.8e-4] — zero, so there is no
+  irreducible bias and enough averaging would resolve anything. What stops it
+  is arithmetic: a perturbation's noise-free separation is 0.00301 against
+  0.0483 for a different shipped voice, about a sixteenth, and N scales as
+  1/TV^2, so presets separate at N=8 while perturbations need order 10^3 —
+  389 CPU-hours for the 1280-sample corpus against 0.90 h for a WavLM probe
+  pass. The habit: when an instrument is too noisy, fit the noise against
+  `1/sqrt(N)` with a free asymptote first. A nonzero asymptote means no N
+  works; a zero one turns the question into a cost comparison against the
+  tools already in the repo, which is usually where it dies.
 - **A single fixed random seed makes a comparison reproducible, not safe.**
   Task #18's sharpest result was that a perturbation moves attention off the
   rows it perturbs: 89% of 240 samples, Wilcoxon p=2e-36. It was an artifact
