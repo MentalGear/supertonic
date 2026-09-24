@@ -1306,6 +1306,92 @@ Scope, restated from the doc: one voice, one language, one sentence, one
 seed. Whether the stream-1/stream-0 split and the specific winning nodes
 hold on a different voice or language is untested.
 
+### Result (2026-09-24): the style-attention distance was calibrated, and the calibration failed — one group-level positive survives
+
+Run with `py/phase3_attention_ladder.py` (committed `e7f3c12`; reproduce with
+`python3 py/phase3_attention_ladder.py --force-ladder --presetspan
+--eps-ladder`). 627 renders, primary text "The quick brown fox jumps over
+the lazy dog.", `speed=1.05`, `style_dp` pinned to M1's so `L=45` (duration
+3.0997 s) held for every render in the comparison. This is the calibration
+CLAUDE.md's rule on calibrating a distance before citing it as evidence asks
+for, run before any ladder number from this phase was interpreted — full
+writeup in [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md#calibration-does-the-style-attention-distance-separate-styles).
+
+**The calibration failed.** The attention maps read off `vector_estimator`
+depend on `noisy_latent` as well as on `style_ttl`, and vocoder sampling is
+unseeded by default, so the noise floor these statistics measure is largely
+which seed a render drew. NULL (`base_ttl` at seeds 0-23, 276 pairs) vs.
+KNOWN-DIFFERENT (10 shipped presets, `style_dp` fixed to M1's, same seed, 45
+pairs): utterance row-profile TV gives AUC 0.826 with 90%/80% of the two
+distributions overlapping (Mann-Whitney p=1.2e-12 on a mean difference that
+does not separate — significance is not separation, the trap CLAUDE.md
+names); frame-resolved TV gives AUC 0.355, the wrong direction, because two
+different presets at one seed sit frame-by-frame closer than one preset at
+two seeds. A seed-matched redesign improves both (utterance AUC 0.950, frame
+AUC 0.875) and still does not separate — no threshold works in any variant.
+The floor generalizes past M1 (measured on the other 10 presets: utterance
+0.0378 +/- 0.0132, frame 0.1732 +/- 0.0103) and shows up on three other
+statistics too: word-boundary shift (up to 109 ms mean-max, mean 41.6 ms,
+same style across seeds), active-row mass (sd 0.0088 same-style vs. 0.017
+between-preset — a different voice barely exceeds seed noise), and
+`effective_rows` (34.98 +/- 0.79).
+
+The forced ladder (`ttl_K4`/`K16`/`K64`, N=80 each, one seed), run past the
+gate and labelled as such, sits entirely inside that floor: TV from base
+0.00846 mean is 0.26x the seed floor with 0 of 240 samples exceeding the
+floor's maximum; frame TV is 0.16x the floor. It is monotone in K (TV
+0.00647/0.00886/0.01004) and reproduces on a longer sentence (L=63: ladder TV
+0.0096 vs. a 0.0276 floor), but timing shows no measurable movement (max
+word-boundary shift 73.7 ms mean, mean shift 11.0 ms — both below the
+same-style floor, and the mean is sub-frame), `effective_rows` shows no
+dependence on K, and the per-sample rank correlation between which style
+"moves attention more" at seed 0 vs. seed 1 does not replicate (rho 0.61,
+-0.21, -0.29 across K4/K16/K64). The active-row test's apparent finding —
+attention moving off the perturbed rows, mean d_active_mass -0.0033, 89% of
+samples negative, Wilcoxon p=2e-36 — failed its own controls: 21% of random
+24-row subsets move at least as much mass, only 46% of samples beat 95% of
+shuffles, a fixed random subset reaches the same one-sign consistency 9% of
+the time, and the sign flips outright at a second seed (fraction negative
+0.45/0.35/0.30, mean positive in all three K groups). That direction was a
+property of one base render, not of the perturbation.
+
+Two corrections surfaced during this work, both re-verified independently:
+`ttl_K4`/`K16`/`K64` are not a magnitude ladder (realized Frobenius norm is
+0.96537 +/- 3e-5 identical across all three, since eps is held constant —
+within-K "magnitude" correlations are against 0.003% variance); magnitude
+dependence is answered instead by pooling eps 0.05/0.10/0.20 across the
+matched corpora, where the instrument does track magnitude as a group
+contrast, still entirely below the per-sample floor (K4 eps 0.05->0.20: TV
+0.00214->0.00647, Spearman 0.579, p=3.5e-11; K16 eps 0.10->0.20: Spearman
+0.474, p=1.7e-7). And `py/results/phase2b_subspace_matched_k16` is eps 0.10,
+not the 0.05 its name implies.
+
+**The one usable finding:** the preset-span three-way replicates across a
+seed change, which no per-sample statistic here does. At matched Frobenius
+norm, perturbations confined to the 9-dim preset-span subspace move the
+row-attention profile ~2.1x as far as random ones (utterance TV 0.0229 vs.
+0.0107, AUC 0.874, p=6.5e-7; frame TV 0.0731 vs. 0.0294, AUC 0.919,
+p=2.6e-8), with a row-energy-matched random control landing with the plain
+random control (0.0115/0.0342) — so the gap is the subspace direction, not
+the row-energy profile — and a second seed reproducing both group means to
+within 3% (utterance 0.0223 vs. 0.0114, AUC 0.819, p=2.3e-5; frame 0.0690
+vs. 0.0281, AUC 0.830, p=1.2e-5). This recapitulates the earlier probe's
+0.9376 vs. 0.7593 preset-span gap in a readout needing no new audio and no
+embedding model. **But it is a group-mean contrast sitting below the
+per-sample floor** — the instrument has group resolution, not sample
+resolution, and that limit is now recorded in
+[docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) as a bullet under
+"What this does NOT reach" so it cannot be reached for as an audibility or
+identity meter by mistake.
+
+**Next, and cheapest:** whether seed-averaging buys back enough resolution
+to make a per-style attention distance usable — the same-style floor's sd
+(~0.011 utterance TV over 24 seeds) suggests averaging over roughly that many
+seeds per style could shrink the floor enough to separate from the
+between-preset distribution, but this is untested. It costs about 24 renders
+per style to check, all through the existing instrumented graph with no new
+listening and no embedding model.
+
 ## Phase 3: Deriving the Axes
 
 ### Are age and vocal presentation root attributes?

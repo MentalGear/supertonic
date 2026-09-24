@@ -8,8 +8,17 @@ so, and what that measurement does and does not reach.
 
 Read this alongside the CLAUDE.md project notes on `style_ttl` and `style_dp`
 it corrects (see "Two premises this corrects," below) and alongside
-[new-plan.md](../new-plan.md)'s Phase 2b/2a record, which this instrument now
-gives a way to re-examine without new renders.
+[new-plan.md](../new-plan.md)'s Phase 2b/2a record.
+
+**Read the calibration section before using any distance from this
+instrument.** The readout is real, and the architectural facts below hold.
+But the obvious way to use it — treat the style-row attention profile as a
+per-style fingerprint and measure how far a perturbation moves it — was
+calibrated against known-same and known-different pairs and **does not
+separate them**. A whole different shipped voice moves the profile only 1.81x
+as far as re-drawing the vocoder seed on the identical style. Everything in
+the sections before "Calibration" was measured on a single render and should
+be read as a description of the architecture, not as a per-style measurement.
 
 ## What was found, and how it was verified
 
@@ -149,6 +158,20 @@ render, averaged over the four style-attention nodes:
   average, but the per-frame total-variation figure above shows that average
   is not what any single frame looks like.
 
+**Limit, added after the calibration below.** These three numbers are a
+property of the *architecture* — the rows really are attended to differently
+at different latent frames, and that claim stands. They are not, on their
+own, evidence that this distance can tell one *style* from another. Measured
+directly (see "Calibration: does the style-attention distance separate
+styles?" below), the same total-variation statistic computed between two
+renders of the *same* style at two different vocoder seeds is nearly as
+large as the same statistic computed between two *different* voices at one
+shared seed — AUC 0.826 at the utterance level, with 80-90% of the two
+distributions overlapping, and the frame-resolved version of the statistic
+does worse than chance at the job (AUC 0.355) in its most direct form. Read
+the numbers above as confirmation that the mechanism exists, not as a usable
+per-style fingerprint.
+
 What this means for the roadmap: CLAUDE.md's project notes already inferred,
 from `style_ttl`'s dual consumption by `text_encoder` and `vector_estimator`,
 that it has "per-position reach" rather than acting as a single timbre
@@ -162,6 +185,125 @@ land more on some frames (and therefore some words) than others. It does not
 by itself explain *which* rows drive *which* words — that mapping is not
 measured here — but it confirms the reach is real and gives an instrument to
 go look for it directly, on existing renders, with no new audio.
+
+## Calibration: does the style-attention distance separate styles?
+
+The section above establishes that the row-attention map is frame-varying.
+It says nothing about whether the *distance* between two such maps can tell
+two styles apart, which is the question that matters for using this
+instrument as a readout rather than as an architectural curiosity. It was
+calibrated once, after the fact, against exactly that question, using
+`py/phase3_attention_ladder.py` (committed `e7f3c12`; reproduce with
+`python3 py/phase3_attention_ladder.py --force-ladder --presetspan
+--eps-ladder`). 627 renders total, primary text "The quick brown fox jumps
+over the lazy dog.", `speed=1.05`, `style_dp` pinned to M1's so every render
+in the comparison shares `L=45` (duration 3.0997 s).
+
+**It failed. That is the headline, not a caveat below one.** The attention
+maps depend on `noisy_latent` as well as on `style_ttl`, and
+`sample_noisy_latent()` draws an unseeded `np.random.randn` on every call
+(see the CLAUDE.md bullet on unseeded vocoder sampling) — so a substantial
+part of what these statistics measure is which seed a render happened to
+draw, not which style it was given.
+
+### Reference distributions
+
+NULL — one style (`base_ttl`, M1's `style_ttl`) rendered at seeds 0-23, all
+276 pairs — against KNOWN-DIFFERENT — the 10 shipped presets' `style_ttl`,
+with `style_dp` substituted for M1's so `L` stays fixed, same seed, all 45
+pairs:
+
+| Statistic | NULL (same style, different seed) | KNOWN-DIFFERENT (different style, same seed) | AUC |
+|---|---|---|---|
+| utterance row-profile TV | 0.0328 +/- 0.0114 [0.0141, 0.0725] | 0.0594 +/- 0.0310 [0.0192, 0.1372] | 0.826 |
+| frame-resolved TV | 0.1479 +/- 0.0267 | 0.1359 +/- 0.0547 | 0.355 (wrong direction) |
+
+At the utterance level, 90% of same-style pairs and 80% of different-style
+pairs sit inside the two distributions' shared overlap interval, and the
+ratio of means is 1.81. A Mann-Whitney test on the utterance statistic gives
+p=1.2e-12 — **the means differ at high significance, and the distributions
+still overlap on 80-90% of their mass.** Significance of a mean difference is
+not separation; this is a clean instance of the trap CLAUDE.md's calibration
+bullet names.
+
+The frame-resolved statistic does worse than chance at this task in its
+unmatched form (AUC 0.355): two *different* presets rendered at *one* shared
+seed are, frame by frame, on average *closer* to each other than one preset
+rendered at *two* different seeds is to itself. In this design it is
+measuring which seed was drawn, not which style was given.
+
+### Matched variant
+
+The design above is not seed-matched — KNOWN-DIFFERENT holds the seed fixed
+while NULL varies it, which is what produces the frame-resolved AUC of
+0.355. Re-run so both distributions carry one seed change: AUC improves and
+still does not separate.
+
+| Statistic | AUC | Fraction of KNOWN-DIFFERENT inside NULL's spread |
+|---|---|---|
+| utterance TV | 0.950 | 80% |
+| frame TV | 0.875 | 98% |
+
+No threshold separates the two distributions in either the matched or the
+unmatched variant. The floor is not specific to M1: measured on the other 10
+shipped presets (each rendered at seed 0 vs. seed 1), the same-style floor is
+utterance TV 0.0378 +/- 0.0132, frame TV 0.1732 +/- 0.0103 — consistent with
+the M1-only numbers above.
+
+### Three further floors
+
+Statistics that are not distances on the row profile have the same problem:
+
+- **Word boundaries**, same style across seeds: max shift 109 ms mean
+  (median exactly one frame, up to 3 frames), mean shift 41.6 ms.
+- **Active-row mass** (the 24 rows a preset-span perturbation touches), same
+  style across seeds: sd 0.0088, range 0.342-0.376. Between different
+  presets at one seed: sd 0.017, range 0.309-0.366 — a different voice
+  barely exceeds seed noise on this statistic.
+- **`effective_rows`**, same style across seeds: 34.98 +/- 0.79.
+
+### The one positive, and its caveat
+
+One contrast does replicate across a seed change: at matched Frobenius norm,
+perturbations confined to the 9-dimensional preset-span subspace move the
+row-attention profile roughly 2.1x as far as random-direction perturbations
+of the same size.
+
+| | preset-span | random-direction | AUC | p |
+|---|---|---|---|---|
+| utterance TV (seed 0) | 0.0229 | 0.0107 | 0.874 | 6.5e-7 |
+| frame TV (seed 0) | 0.0731 | 0.0294 | 0.919 | 2.6e-8 |
+| utterance TV (seed 1) | 0.0223 | 0.0114 | 0.819 | 2.3e-5 |
+| frame TV (seed 1) | 0.0690 | 0.0281 | 0.830 | 1.2e-5 |
+
+`row_matched_random` — a control matched to preset-span's per-row energy
+profile but not its subspace direction — lands with `random_control`, at
+0.0115 / 0.0342, so the gap is the *subspace direction*, not the row-energy
+distribution. Group means reproduce to within 3% across the seed change.
+This recapitulates the earlier probe's 0.9376 vs. 0.7593 preset-span R^2 gap
+([new-plan.md](../new-plan.md)) in a readout that needs no new audio and no
+embedding model.
+
+**The caveat that matters:** this is a group-mean contrast, not a per-sample
+one, and it sits below the per-sample floor measured above — preset-span's
+own per-sample utterance TV (mean 0.0229) is inside the same-style floor's
+own spread. The instrument has group resolution — average many samples and
+the preset-span direction stands out from a random one — but not sample
+resolution: given a single rendered pair, this distance cannot tell you
+whether it came from two styles or from one style at two seeds.
+
+### Verdict
+
+The row-attention distance, at either resolution, does not separate two
+styles from two seeds of one style on a per-sample basis, in any variant
+tested. It preserves one group-level contrast (preset-span vs.
+random-direction perturbations) across a seed change. Do not use it as a
+per-style discriminator, an audibility proxy, or a substitute for a
+listening test or a calibrated embedding distance. The forced ladder run
+past this failed gate — magnitude dependence, timing, and why an
+active-row-targeting finding did not survive its own controls — is recorded
+in [new-plan.md](../new-plan.md)'s 2026-09-24 entry rather than repeated
+here.
 
 ## Using the module and CLI
 
@@ -240,6 +382,20 @@ python3 -m unittest discover -s py -p "test_*.py"
 Worth stating plainly, because the finding above is easy to over-claim in
 either direction.
 
+- **It is not an identity, audibility, or "did the perturbation land"
+  meter.** Calibrated against 276 same-style pairs (one style, 24 vocoder
+  seeds) and 45 known-different pairs (10 shipped presets, one shared seed):
+  the utterance-level row-attention distance separates them with AUC 0.826,
+  but with 90% of same-style pairs and 80% of different-style pairs sitting
+  inside the shared overlap region — a seed change moves this statistic
+  almost as much as swapping the voice does (same-style floor to
+  between-preset ratio: 1.81x). The frame-resolved version of the same
+  statistic is worse than a coin flip at this job in its unmatched form, AUC
+  0.355 — it points the wrong way, because two different voices at one seed
+  sit frame-by-frame *closer* together than one voice does across two seeds.
+  See "Calibration: does the style-attention distance separate styles?"
+  above before reaching for either statistic as a cheap substitute for a
+  listening test or an embedding distance.
 - **This aligns the model's own generated audio to the text it was given —
   it does not align an external recording.** Forced alignment of a human
   recording (matching real audio to a transcript) is a different problem
@@ -265,11 +421,19 @@ either direction.
 
 ## Provenance of the numbers in this doc
 
-Every figure above was produced by instrumented inference against
-`assets/onnx/vector_estimator.onnx` on CPU — preset M1, seed 0, 8 steps,
-`speed=1.0` — and independently reproduced by running `py/attention.py`'s CLI
-after the module was written. The two runs agree on the chosen node, head and
-stream, on all nine word spans, and on both style-attention summaries.
+The figures outside the calibration section were produced by instrumented
+inference against `assets/onnx/vector_estimator.onnx` on CPU — preset M1,
+seed 0, 8 steps, `speed=1.0` — and independently reproduced by running
+`py/attention.py`'s CLI after the module was written. The two runs agree on
+the chosen node, head and stream, on all nine word spans, and on both
+style-attention summaries.
+
+The calibration section's figures come from a separate and larger run,
+`py/phase3_attention_ladder.py` (627 renders, `speed=1.05` and `style_dp`
+pinned to M1's, to match the corpus it was read against), and are re-readable
+from `py/results/phase3_attention_ladder/*.json` without re-rendering. The
+speed difference is why the single-render numbers above and the calibration's
+own base render are not directly comparable; each is internally consistent.
 
 Two figures were corrected during that reconciliation, and the originals are
 recorded here so the earlier commits can be read honestly:
