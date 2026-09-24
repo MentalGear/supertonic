@@ -61,6 +61,53 @@ inline burns the context the main loop needs for judgment.
   (`dur_onnx = dur_onnx / speed`). Treat timing as an effective scalar, not a
   second control surface. Rate and rhythm control, if it is reachable at all,
   has to come through `style_ttl`.
+- **`style_ttl` is the value bank of a 50-slot style-token layer whose keys
+  are learned constants — it is not 12,800 free numbers.** Walking forward
+  from the `style_ttl` graph input to the first linear op, it reaches exactly
+  six MatMuls and nothing else: `attention{1,2}/W_value` in `text_encoder`
+  and `main_blocks.{5,11,17,23}/attention/W_value` in `vector_estimator`.
+  All six are **W_value**; `style_ttl` never reaches a `W_key` or `W_query`
+  projection. The key tensor traces back through `Tile`/`Expand` to an
+  initializer named `tts.ttl.style_encoder.style_token_layer.style_key`, and
+  is bit-identical under two completely different random style tensors
+  (max abs difference 0.0, shape `(1,50,256)`). So the addressing over slots
+  is style-independent; the style lives in the values. One exception:
+  `text_encoder/attention2`'s `W_query` does see `style_ttl`, and
+  `vector_estimator`'s queries see `text_emb`, which is style-conditioned, so
+  routing is indirectly style-dependent downstream of the text encoder.
+  The six projections are essentially full rank (254–256), so directions are
+  **low-gain, not invisible**, but the gain is far from flat: stacked to
+  1536x256 the surface has participation 199.7 against 245.2 for a
+  shape-matched Gaussian null, 40 of 256 directions carry half the energy,
+  and the top-to-bottom singular value ratio is **8.1x against the null's
+  2.34x**. Two consequences worth carrying: task #18's failure to read style
+  off the row-attention profile was **structural, not statistical** — it was
+  measuring the addressing, which is nearly style-independent by
+  construction — and the parametrisation question changes shape, because
+  Phase 2b's rank ceiling was `n_train/d` at `d = 6144` when the effective
+  dimensionality of what the model can distinguish is far smaller. See
+  [docs/STYLE_CONTROL_SURFACE.md](docs/STYLE_CONTROL_SURFACE.md). Nothing
+  here is yet connected to audibility: "the model is more sensitive to this
+  direction" is not "a listener hears this direction."
+- **Community prior art exists and one piece of it is directly useful.**
+  `kdrkdrkdr/supertonic.embed` (MIT code, targets supertonic-2, actively
+  maintained) gets a style tensor from a reference recording by **gradient
+  descent through the frozen graphs** — onnx2torch, every weight frozen,
+  backprop until a frozen WavLM's pooled layer statistics match — rather than
+  by training an encoder. It independently reaches two of this fork's own
+  conclusions: it fits `style_dp` by matching a rate rather than per-token
+  durations, and it re-projects every row onto the unit sphere each step.
+  That path sidesteps the ridge rank ceiling rather than fighting it, needs
+  no dataset, and generalizes to a named axis by swapping in a differentiable
+  probe for that axis. `ORI-Muchim/supertonictts-training` is real
+  from-scratch training code with a genuine style-encoder module, but ships
+  no weights and does **not** offer a way to fine-tune the shipped
+  style-conditioning graphs, so the frozen premise stands. Before porting any
+  of it, check the graph: that repo's dump of "the released
+  `vector_estimator`" reports 964 nodes / 33.0M params / 132 MB, while this
+  fork's file is **1004 nodes / 64.0M params, all float32 / 256,534,781
+  bytes**, both claiming supertonic-2. See
+  [docs/PRIOR_ART.md](docs/PRIOR_ART.md).
 - **A graph's declared outputs are the exporter's choice, not a property of
   the weights — "frozen" bounds what you can change, never what you can
   read.** This file previously recorded that "there is no per-token duration
