@@ -240,6 +240,37 @@ inline burns the context the main loop needs for judgment.
   known-same and known-different pairs; if those two distributions overlap,
   the distance cannot support the claim.** A threshold derived from a single
   pair is not a calibration.
+  The rule has now paid for itself once, which is the reason to keep applying
+  it up front. Task #18 set out to use style-row attention as a readout of
+  `style_ttl`, and the calibration run — the noise floor being a re-drawn
+  vocoder seed on the identical style, the known-different set being the ten
+  shipped presets with `style_dp` pinned so `L` stays fixed — killed it before
+  any ladder number was interpreted: utterance row-profile TV separates at
+  AUC 0.826 with 80% of different-pairs inside the overlap, a whole different
+  voice moving the profile only 1.81x as far as re-seeding the same one, and
+  the frame-resolved variant comes out at AUC 0.355, i.e. backwards, a
+  seed-difference meter. Mann-Whitney on the same data is p=1.2e-12, so note
+  the shape of the trap: **significance of a mean difference is not
+  separation**, and a p-value is not a calibration either. Two further habits
+  earned there — build the known-same and known-different sets
+  condition-matched (varying the seed in one and not the other is what
+  produced the backwards AUC), and give every statistic you intend to cite
+  its own floor, not just the headline distance. See
+  [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) and
+  `py/phase3_attention_ladder.py`.
+- **A single fixed random seed makes a comparison reproducible, not safe.**
+  Task #18's sharpest result was that a perturbation moves attention off the
+  rows it perturbs: 89% of 240 samples, Wilcoxon p=2e-36. It was an artifact
+  of the one base render it was measured against — the sign flips at a second
+  vocoder seed, and the group mean goes positive in all three conditions.
+  Pinning the seed had made every comparison deterministic and every
+  comparison wrong in the same direction, which is worse than noisy, because
+  it looks clean. Any aggregate read against a single reference render needs
+  several reference seeds before it is a finding. Related: that same result
+  survived the per-sample shuffled-row control and died to a *fixed* random
+  subset scored across all samples (9% of the time, p=0.09) — match the
+  control to the claim, which here was about sign consistency across samples
+  rather than magnitude within one.
 - **An estimator's expressive ceiling must be checked out of sample — an
   in-sample headroom statistic is a function of matrix shape, not content,
   and will certify any design.** Same failure mode as the bullet above — an
