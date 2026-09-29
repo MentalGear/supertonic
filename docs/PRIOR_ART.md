@@ -150,21 +150,33 @@ original paper trained on (945 hours, ~2,576 speakers, reported by the
 paper/repo). Reported by the repo, not reproduced here: the completed
 700k-step single-speaker TTL run alone took ~74 hours.
 
-**A verified graph mismatch worth recording.** This repo's own ONNX dump of
-"the released `vector_estimator`" reports 964 nodes / 33.0M params / 132 MB.
-This fork's actual `assets/onnx/vector_estimator.onnx` is **1004 nodes /
-64.0M params (all float32) / 256,534,781 bytes** — measured directly by the
-main session (file size confirmed again while writing this doc: `ls -la` on
-`assets/onnx/vector_estimator.onnx` returns exactly `256534781` bytes).
-The first version of this document said both files claim to be
-supertonic-2 and called the mismatch unexplained. With this fork now known
-to ship v3, the likely explanation is simply that the repo's dump is of
-**v2's** `vector_estimator` and this fork's is **v3's** — the repo's last
-activity (2026-05-13) is two weeks after v3's release, and v3's doubling of
-this graph is consistent with a larger model. That is an inference from
-dates and sizes, not a confirmed identification. Either way the practical
-point stands: node indices and parameter counts do not transfer between
-the two, so anyone porting code from that repo should re-derive them
+**A graph mismatch worth recording, now explained.** This repo's own ONNX dump
+of "the released `vector_estimator`" reports 964 nodes / 33.0M params /
+132 MB. This fork's actual `assets/onnx/vector_estimator.onnx` is **1004
+nodes / 64.0M float32 params / 256,534,781 bytes**. *(Corrected 2026-09-29:
+an earlier version of this paragraph said "1004 nodes / 64.0M params (all
+float32)" and "A verified graph mismatch ... measured directly". Only **this
+fork's** side was measured directly — file size checked with `ls -la`
+(exactly `256534781` bytes), node count and parameters read from the graph.
+The repo's 964-node / 33.0M-param figures are relayed from its own dump and
+remain **unchecked**. And "all float32" was imprecise: `vector_estimator` also
+carries 85 INT64 initializers (1,127 elements); the float parameters are
+64,013,449, hence "64.0M float32 params".)*
+
+The first version of this document said both files claim to be supertonic-2
+and called the mismatch unexplained; the previous revision then called the
+v2-vs-v3 reading "an inference from dates and sizes, not a confirmed
+identification". **It is now confirmed by file size.** The Hugging Face tree
+listing for `Supertone/supertonic-2` gives `vector_estimator.onnx` =
+**132,471,364 bytes** — the repo's "132 MB". The listing for
+`Supertone/supertonic-3` gives **256,534,781** (`vector_estimator`),
+36,416,150 (`text_encoder`), 3,700,147 (`duration_predictor`) and 101,424,195
+(`vocoder`), byte-identical to this fork's files. Also, 33.0M params x 4 bytes
+= 132 MB, so the repo's 132 MB file is float32, not an fp16 export of the same
+graph. The repo's dump is of **v2's** `vector_estimator`, and this fork's is
+**v3's**. What is *not* confirmed is the 964-node count itself, still relayed.
+The practical point stands: node indices and parameter counts do not transfer
+between the two, so anyone porting code from that repo should re-derive them
 against this fork's file.
 
 ## Comparison table
@@ -173,7 +185,7 @@ against this fork's file.
 |---|---|---|---|---|---|---|
 | saurabhv749/supertonic3-voice-clone | Gradient inversion through frozen ONNX (onnx2torch), ECAPA speaker-embedding objective, `style_ttl` only | reference WAV -> `style_ttl [1,50,256]` | No (downloads at runtime) | MIT code / Open RAIL-M weights + Apache-2.0 (ECAPA) | 2026-07-08, 7 commits | **Same release (v3).** Likeliest of the three to convert this fork's graphs as-is; not executed here |
 | kdrkdrkdr/supertonic.embed | Same inversion technique, WavLM layer-stats objective, plus a rate-matching fit for `style_dp` | reference WAV -> `style_ttl [1,50,256]`, `style_dp [1,8,16]` | No (downloads at runtime) | MIT code / OpenRAIL-M weights | 2026-09-05, active | **Different release (v2).** Technique transfers; graph patches and output tensors do not without re-checking |
-| ORI-Muchim/supertonictts-training | From-scratch reimplementation, real training code, a trained-encoder architecture | audio -> `style_ttl [B,50,256]`, `style_dp [B,8,16]` (encoder); text+style -> audio (full retrain) | No (gitignored, confirmed absent) | MIT | 2026-05-13, 15 commits | Architecture only — no usable weights, and its `vector_estimator` dump is most likely v2's |
+| ORI-Muchim/supertonictts-training | From-scratch reimplementation, real training code, a trained-encoder architecture | audio -> `style_ttl [B,50,256]`, `style_dp [B,8,16]` (encoder); text+style -> audio (full retrain) | No (gitignored, confirmed absent) | MIT | 2026-05-13, 15 commits | Architecture only — no usable weights, and its `vector_estimator` dump is v2's (132 MB matches the v2 file size exactly; node count relayed, unchecked) |
 
 ## What this changes for us
 

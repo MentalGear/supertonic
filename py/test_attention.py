@@ -101,6 +101,10 @@ class ExportIdempotencyTest(unittest.TestCase):
 @unittest.skipUnless(_HAS_ASSETS, "assets/onnx/vector_estimator.onnx not present")
 class AlignmentMonotonicTest(AttentionAssetTests):
     def test_alignment_is_monotonic(self):
+        """The selected head's argmax is monotone. This is a property check,
+        not a validity check: a positional ramp that ignores the text passes
+        it too, which is how the word-timestamp claim got through. See
+        WordSpansMatchAudioTest for the check against the waveform."""
         _wav, alignment, _style_attn = self.analyze()
         self.assertGreater(alignment.spearman, 0.95)
 
@@ -133,6 +137,36 @@ class WordSpansTest(AttentionAssetTests):
             self.assertLessEqual(end, alignment.duration)
 
         self.assertTrue(all(a <= b for a, b in zip(starts, starts[1:])))
+
+
+@unittest.skipUnless(_HAS_ASSETS, "assets/onnx/vector_estimator.onnx not present")
+class WordSpansMatchAudioTest(AttentionAssetTests):
+    @unittest.expectedFailure
+    def test_every_word_lands_in_speech(self):
+        """KNOWN DEFECT, recorded 2026-09-29. word_spans() is not a working
+        timestamp: on this render it places "dog" at 2.79-2.86 s, after speech
+        ends at ~2.64 s, at about -70 dB. The selected head is a near-linear
+        positional ramp that spreads tokens evenly, so the tail tokens land in
+        the trailing silence. This test encodes the check that should have
+        been run before the spans were called timestamps. If it ever starts
+        PASSING, unittest reports an unexpected success -- that is the signal
+        to re-examine the readout, not to delete this test."""
+        wav, alignment, _style_attn = self.analyze()
+        wav = np.asarray(wav).reshape(-1)
+        sr = self.tts.sample_rate
+        wav = wav[: int(alignment.duration * sr)]
+        hop = int(0.010 * sr)
+        rms = np.array(
+            [np.sqrt(np.mean(wav[i : i + hop] ** 2)) for i in range(0, len(wav) - hop, hop)]
+        )
+        level_db = 20 * np.log10(rms + 1e-9)
+        # Speech = frames within 35 dB of the loudest frame.
+        active = np.where(level_db > level_db.max() - 35.0)[0]
+        speech_start, speech_end = active[0] * 0.010, (active[-1] + 1) * 0.010
+        for word, start, end in alignment.word_spans():
+            with self.subTest(word=word):
+                self.assertLess(start, speech_end, f"{word!r} starts after speech ends")
+                self.assertGreater(end, speech_start, f"{word!r} ends before speech starts")
 
 
 @unittest.skipUnless(_HAS_ASSETS, "assets/onnx/vector_estimator.onnx not present")

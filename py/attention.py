@@ -18,8 +18,42 @@ Two node families show up, distinguished by op name (see CLAUDE.md's
 
 L is the number of latent frames, each `base_chunk_size *
 chunk_compress_factor` samples of audio. The leading two axes of both
-families are (head, stream); nothing here assumes what "stream" means beyond
-"a second axis to search over", per the brief this module was built from.
+families are (head, stream).
+
+CORRECTION (2026-09-29) -- read before trusting `Alignment` or `word_spans()`:
+
+  * What this module still does correctly: it exposes the eight attention
+    maps, and the waveform `analyze()` returns is bit-identical to
+    `helper.TextToSpeech`'s own render at the same seed (the drift-guard test).
+  * What it does NOT do: give timestamps. The head `_select_best_alignment`
+    picks (main_blocks.9/attn, head 1, stream 1 on the verification render) is
+    a near-linear positional ramp -- mean deviation from a straight line
+    0.77 tokens -- and the Spearman rho of 0.9995 that selected it measures
+    monotonicity, which any ramp has; it was never a test of content
+    alignment. With duration pinned so L matches, a nonsense text of the same
+    character length gives, at the final denoising step, stream 0 argmax
+    agreeing with the real sentence on 98% of frames and stream 1 on 55%: at
+    the final step neither stream of that head tracks text content.
+  * `word_spans()` is NOT validated against audio. In the one check done
+    (M1, seed 0, 8 steps, speed 1.0, "The quick brown fox ...", 3.255 s), a
+    10 ms RMS envelope puts speech at 0.39-2.64 s and the readout places
+    "dog" at 2.79-2.86 s, entirely after speech ends, at -70.8 dB. The other
+    words land inside speech, which any even spread across the utterance would
+    also do; the ramp fails at the tail.
+  * The `stream` axis is most likely the classifier-free-guidance pair
+    (stream 0 conditional, stream 1 unconditional), from graph structure
+    (batch-axis Concats of text_emb / style key / style value with an
+    unconditional token; an `uncond_masker` block in tts.json). Not
+    established.
+  * Every readout here is taken from the FINAL denoising step only
+    (`step == total_step - 1` in `analyze()`). Earlier steps are not read.
+  * `StyleAttention` averages over heads AND both streams, so its summary
+    numbers blend the two; see docs/ATTENTION_READOUT.md for the per-stream
+    figures.
+
+Whether a content-tracking alignment exists elsewhere (another head or block,
+an earlier step, the conditional stream alone) is open and untested. See
+docs/ATTENTION_READOUT.md.
 
 Usage (from the repo root, so `assets/onnx` resolves):
     python3 py/attention.py --text "..." --voice assets/voice_styles/M1.json
@@ -161,7 +195,18 @@ def _tag_char_indices(joined: str) -> set:
 
 @dataclass
 class Alignment:
-    """The text-attending head selected as the render's alignment."""
+    """The text-attending head selected as the render's "alignment".
+
+    WITHDRAWN (2026-09-29): this is the head with the highest Spearman rho
+    between frame index and argmax text unit, taken from the final denoising
+    step only. On the verification render that head is a near-linear
+    positional ramp, not a text-content alignment: rho measures monotonicity,
+    and a nonsense text of equal length yields the same argmax on 98% (stream
+    0) / 55% (stream 1) of frames. Nothing on this object is a validated
+    timestamp. `stream` is most likely the classifier-free-guidance
+    cond/uncond pair; that is inferred from graph structure, not established.
+    The name is kept for compatibility with callers, not as a claim.
+    """
 
     matrix: np.ndarray  # (L, T) the chosen head's attention map
     tokens: list  # length T, decoded characters
@@ -203,7 +248,13 @@ class Alignment:
         ]
 
     def word_spans(self) -> list:
-        """Whitespace-grouped words, language tags excluded, each spanning
+        """NOT VALIDATED AS TIMESTAMPS (2026-09-29): these spans come from a
+        positional ramp (see `Alignment`) and in the one audio check done
+        placed the final word ("dog") after speech had ended, in silence.
+        Treat the output as an even spread of words across the utterance, not
+        as where words were spoken.
+
+        Whitespace-grouped words, language tags excluded, each spanning
         min start to max end over its constituent (alphanumeric) units.
         Punctuation-only groups are skipped, and punctuation attached to a
         word (e.g. a trailing period) is dropped from both the label and the
@@ -242,7 +293,14 @@ class Alignment:
 
 @dataclass
 class StyleAttention:
-    """The style_ttl-attending heads, averaged into one (L, 50) map."""
+    """The style_ttl-attending heads, averaged into one (L, 50) map.
+
+    The average is over heads AND both streams (axes 0 and 1) and over the four
+    style nodes, at the final denoising step only. The two streams behave
+    differently (audit-measured on one render: frame TV mean 0.418 for stream
+    0 vs 0.255 for stream 1; effective rows 24.7 vs 32.8), so the summaries
+    below are a blend, not a clean measurement of how style_ttl is read.
+    """
 
     matrix: np.ndarray  # (L, 50), mean over the four style nodes and their leading axes
     frame_seconds: float
@@ -272,7 +330,10 @@ class StyleAttention:
 def _select_best_alignment(text_arrays: dict) -> tuple:
     """Score every (node, head, stream) in the text family by Spearman rho
     between frame index and argmax text unit, and return the best one as
-    (node, head, stream, rho). NaN scores (constant argmax) are skipped."""
+    (node, head, stream, rho). NaN scores (constant argmax) are skipped.
+
+    Rho is a monotonicity score, so it selects the straightest ramp, not the
+    head that follows text content (see the module docstring, 2026-09-29)."""
     best_node = best_head = best_stream = None
     best_rho = float("-inf")
     for node, arr in text_arrays.items():
@@ -442,6 +503,11 @@ def main():
     print(f"Node: {alignment.node}  head={alignment.head}  stream={alignment.stream}  "
           f"spearman={alignment.spearman:.4f}  duration={alignment.duration:.3f}s")
     print()
+    print("WARNING: these spans are NOT validated timestamps. The selected head is a "
+          "positional ramp (spearman measures monotonicity, not content alignment); "
+          "in one audio check the last word landed in silence. "
+          "Final denoising step only. See docs/ATTENTION_READOUT.md.")
+    print()
     print(f"{'word':<12}{'start_s':>10}{'end_s':>10}")
     for word, start, end in alignment.word_spans():
         print(f"{word:<12}{start:>10.2f}{end:>10.2f}")
@@ -449,6 +515,8 @@ def main():
     fd = style_attention.frame_divergence()
     er = style_attention.effective_rows()
     print()
+    print("note: style statistics below average over heads and BOTH streams "
+          "(a blend), final denoising step only.")
     print(
         f"style frame_divergence: mean={fd.mean():.3f} min={fd.min():.3f} max={fd.max():.3f}"
     )

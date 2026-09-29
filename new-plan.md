@@ -1248,12 +1248,18 @@ including the export snippet, the shape table, the head-selection method,
 and what it does not reach, is in
 [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md).
 
+**Correction, 2026-09-29: the word-timestamp claim in this section is
+withdrawn — the "alignment" head is a positional ramp that placed the last
+word in silence; see the "Result (2026-09-29): audit" section below and the
+top of `docs/ATTENTION_READOUT.md`.**
+
 Two families, disambiguated by shape: `main_blocks.{3,9,15,21}/attn/Softmax`
 at `(8, 2, 47, 53)` attends over text positions, and
 `main_blocks.{5,11,17,23}/attention/Softmax` at `(2, 2, 47, 50)` attends over
 `style_ttl`'s 50 rows. The text family contains a near-perfect monotonic
-alignment (best: `main_blocks.9/attn` head 1 stream 1, Spearman rho = 0.9995
-between frame index and argmax text position), read off to word spans at the
+alignment (**withdrawn 2026-09-29; it is a ramp** — best: `main_blocks.9/attn`
+head 1 stream 1, Spearman rho = 0.9995, a monotonicity score, between frame
+index and argmax text position), read off to word spans at the
 vocoder's native 69.66 ms frame resolution — the model aligning its own
 generated audio to the text it was given, not forced alignment of an
 external recording, and not transcription (see the doc's "what this does not
@@ -1263,7 +1269,11 @@ The style family is the more consequential half here. Each latent frame
 computes its own softmax distribution over `style_ttl`'s 50 rows — measured,
 not merely re-inferred: mean total-variation distance of a frame's row
 distribution from the utterance mean is 0.283 (0 would mean a global read),
-mean effective row count `exp(entropy)` is 34.6 of 50. **This directly
+mean effective row count `exp(entropy)` is 34.6 of 50 (*2026-09-29: both are
+blended over heads and both streams, final denoising step only; per stream,
+TV mean is 0.418 (range 0.298-0.724) for stream 0 and 0.255 (0.110-0.576) for
+stream 1, and effective rows 24.7 (5.1-35.1) and 32.8 (6.0-43.1); the
+original blended figures reproduce exactly, as a blend*). **This directly
 confirms, for the first time as a measurement rather than an inference, the
 per-position reach that CLAUDE.md's project notes and bench 9's emphasis
 finding above both pointed at without a mechanism in hand — `style_ttl` is
@@ -1329,10 +1339,11 @@ names); frame-resolved TV gives AUC 0.355, the wrong direction, because two
 different presets at one seed sit frame-by-frame closer than one preset at
 two seeds. A seed-matched redesign improves both (utterance AUC 0.950, frame
 AUC 0.875) and still does not separate — no threshold works in any variant.
-The floor generalizes past M1 (measured on the other 10 presets: utterance
+The floor generalizes past M1 (measured on the 10 shipped presets — which
+include M1, the base, so not "the other 10" as first written: utterance
 0.0378 +/- 0.0132, frame 0.1732 +/- 0.0103) and shows up on three other
 statistics too: word-boundary shift (up to 109 ms mean-max, mean 41.6 ms,
-same style across seeds), active-row mass (sd 0.0088 same-style vs. 0.017
+same style across seeds; *withdrawn 2026-09-29 with the word spans*), active-row mass (sd 0.0088 same-style vs. 0.017
 between-preset — a different voice barely exceeds seed noise), and
 `effective_rows` (34.98 +/- 0.79).
 
@@ -1345,7 +1356,11 @@ statistic to an unpaired floor and is not a valid comparison.** It is monotone i
 0.00647/0.00886/0.01004) and reproduces on a longer sentence (L=63: ladder TV
 0.0096 vs. a 0.0276 floor), but timing shows no measurable movement (max
 word-boundary shift 73.7 ms mean, mean shift 11.0 ms — both below the
-same-style floor, and the mean is sub-frame), `effective_rows` shows no
+same-style floor, and the mean is sub-frame; *corrected 2026-09-29: this is
+the same paired-vs-unpaired error as the 0.26x reading. The ladder's shifts
+are paired (shared seed); the 109 / 41.6 ms floor is unpaired. And the
+timings came from `word_spans()`, which the audit section below withdraws, so
+the comparison is doubly unsupported*), `effective_rows` shows no
 dependence on K, and the per-sample rank correlation between which style
 "moves attention more" at seed 0 vs. seed 1 does not replicate (rho 0.61,
 -0.21, -0.29 across K4/K16/K64). The active-row test's apparent finding —
@@ -1354,7 +1369,9 @@ samples negative, Wilcoxon p=2e-36 — failed its own controls: 21% of random
 24-row subsets move at least as much mass, only 46% of samples beat 95% of
 shuffles, a fixed random subset reaches the same one-sign consistency 9% of
 the time, and the sign flips outright at a second seed (fraction negative
-0.45/0.35/0.30, mean positive in all three K groups). That direction was a
+0.45/0.35/0.30, mean positive in all three K groups; *2026-09-29: the
+second-seed check, `seed_robustness.json`, used n=20 per K, i.e. 60 samples,
+not the 240 of the first-seed result it is set against*). That direction was a
 property of one base render, not of the perturbation.
 
 Two corrections surfaced during this work, both re-verified independently:
@@ -1375,16 +1392,24 @@ row-attention profile ~2.1x as far as random ones (utterance TV 0.0229 vs.
 0.0107, AUC 0.874, p=6.5e-7; frame TV 0.0731 vs. 0.0294, AUC 0.919,
 p=2.6e-8), with a row-energy-matched random control landing with the plain
 random control (0.0115/0.0342) — so the gap is the subspace direction, not
-the row-energy profile — and a second seed reproducing both group means to
-within 3% (utterance 0.0223 vs. 0.0114, AUC 0.819, p=2.3e-5; frame 0.0690
-vs. 0.0281, AUC 0.830, p=1.2e-5). This recapitulates the earlier probe's
+the row-energy profile — and a second seed reproducing both group means (utterance 0.0223 vs. 0.0114,
+AUC 0.819, p=2.3e-5; frame 0.0690 vs. 0.0281, AUC 0.830, p=1.2e-5;
+*corrected 2026-09-29: originally "to within 3%" — only the preset-span
+utterance TV is under 3% (2.6%); the random control's utterance TV moves 6.3%,
+and the frame TVs 5.6% and 4.4%*). This recapitulates the earlier probe's
 0.9376 vs. 0.7593 preset-span gap in a readout needing no new audio and no
-embedding model. **But it is a group-mean contrast sitting below the
-per-sample floor** — the instrument has group resolution, not sample
-resolution, and that limit is now recorded in
+embedding model. **But it is a group-mean contrast** — *corrected 2026-09-29:
+this sentence originally continued "sitting below the per-sample floor — the
+instrument has group resolution, not sample resolution". That compared the
+preset-span mean 0.0229, a shared-seed paired TV, with a floor (0.0328 +/-
+0.0114) that is unpaired: the same error as the 0.26x reading, corrected in
+the section below for that number and not for this one. The group-resolution
+limit is unestablished; it is not shown to be either above or below the
+floor.* The separate caution against using this distance as an audibility or
+identity meter is recorded in
 [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) as a bullet under
-"What this does NOT reach" so it cannot be reached for as an audibility or
-identity meter by mistake.
+"What this does NOT reach", and that caution rests on the unpaired
+calibration, which stands.
 
 **Next, and cheapest:** whether seed-averaging buys back enough resolution
 to make a per-style attention distance usable — the same-style floor's sd
@@ -1413,8 +1438,14 @@ it.
 
 `py/phase3_seed_averaging.py` (committed `e9ed1db`, 1410 renders)
 reproduces the paired ladder measurement directly, on different corpus
-samples: mean paired TV **0.00840**, essentially the original 0.00846. The
-number replicates; the framing around it did not.
+samples: mean paired TV **0.00840**. *Corrected 2026-09-29: this section
+originally said "essentially the original 0.00846. The number replicates; the
+framing around it did not." Not like-for-like:* 0.00846 is the pooled mean
+over `ttl_K4`+`K16`+`K64` (0.00647 / 0.00886 / 0.01004, n=80 each, seed 0);
+0.00840 is `ttl_K64` only (24 styles x 32 seeds), whose like-for-like task
+#18 figure is 0.01004. `seed_robustness.json` also shows paired TV moving
+about 2x with seed (K4: 0.00616 at seed 0, 0.01183 at seed 1). The two agree
+in order of magnitude; the paired-vs-unpaired framing was the error.
 
 Read paired, against its own (zero) null, the perturbation signal is real
 and reproducible:
@@ -1465,8 +1496,11 @@ different-pairs sit inside the same-style range — and only N=32 clears the
 stricter full-range test (0% overlap). No bias floor: the same-style
 distance is pure averagable noise, power-law exponent -0.5096 at
 R^2=0.99959; the free two-parameter fit `a/sqrt(N) + c` puts the asymptote
-at c=1.4e-5 (bootstrap CI95 `[1.3e-6, 2.8e-4]`) — indistinguishable from
-zero and 30-600x below the ladder's 0.00846. "Averaging cannot get there at
+at c=1.4e-5 (bootstrap CI95 `[1.3e-6, 2.8e-4]`) — *corrected 2026-09-29:
+originally "indistinguishable from zero and 30-600x below the ladder's
+0.00846"; the interval strictly excludes zero, so "consistent with zero at the
+ladder's scale", and the relevant comparator is the ladder's noise-free
+separation 0.00301, ~11x above the CI upper bound, not 0.00846*. "Averaging cannot get there at
 any N" is false; the different-preset side converges to 0.0483, matching
 the direct 64-seed computation (0.0482 +/- 0.0134). What kills the approach
 is the price, not a floor.
@@ -1484,8 +1518,12 @@ to ~1330 (its asymptote overstates the fitted one by 1.61x, and N scales as
 1/TV^2); an independent analytic route gives a median of 290 per style, p95
 1093, and 4747 for the weakest of the 24 — the pooled criterion is governed
 by that tail. Frobenius distance from base is constant across the 24
-(0.96537 +/- 0.00003), so the ~70x spread in required N is not a magnitude
-effect.
+(0.96537 +/- 0.00003), so the spread in required N is not a magnitude
+effect. (*Corrected 2026-09-29: originally "the ~70x spread in required N";
+70x is real as a spread in extrapolated required N (69.8 to 4747, 68x) but was
+then read elsewhere as a spread in attention movement. It is not: N scales as
+1/TV^2, so movement spread is ~8.25x; measured paired-TV means vary 1.76x and
+signal energy 15.7x. See the audit section below.*)
 
 **Cost.** At 0.821 s/render: N=1 costs 3.3 min for the 240-sample ladder,
 N=32 costs 1.8 h, N=512 costs 28 h, and the bias-corrected N=1332 costs
@@ -1496,8 +1534,10 @@ rendering) plus 10-20 minutes of listening, does not scale past ~20
 samples, and answers a higher-authority question. The paired design above
 is the cheapest route to any usable signal: reaching a 2:1 signal/noise
 amplitude margin needs a median of 32 paired seeds (64 renders) per sample —
-3.5 h for 240 samples, 18.5 h for 1280, 20-40x cheaper than unpaired
-averaging.
+3.5 h for 240 samples, 18.5 h for 1280, 8-21x cheaper than unpaired
+averaging (*corrected 2026-09-29: originally "20-40x"; the sourced range is
+8.1x against unpaired N=512 — 28.1 h / 149.5 h vs. 3.47 h / 18.5 h — and 21x
+against N=1332 — 73.2 h / 389 h; there is no source for 40x*).
 
 **Verdict: do not build unpaired seed-averaging.** Even the paired variant
 costs ~20x a WavLM pass to deliver a statistic nobody has calibrated
@@ -1507,6 +1547,144 @@ against audibility. The one defensible use is narrow and cheap: a paired
 difference is still seed-specific. Full writeup, including the
 paired-vs-unpaired correction, in
 [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md).
+
+### Result (2026-09-29): audit — the word timestamps are a positional ramp, and five other claims corrected
+
+An audit checked claims written in the 2026-09-23 through 2026-09-25 work
+against the audio, the graphs, and the project's own result files. Seven
+findings; the first is the important one. Full record in
+[docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) and
+[docs/STYLE_CONTROL_SURFACE.md](docs/STYLE_CONTROL_SURFACE.md); the original
+statements are corrected in place above, each marked.
+
+**1. The "word-level timestamps" are withdrawn.** Rendering "The quick brown
+fox jumps over the lazy dog." (M1, seed 0, 8 steps, `speed=1.0`, duration
+3.255 s) and measuring a 10 ms RMS envelope, speech runs 0.39-2.64 s (35 dB
+below peak). `word_spans()` places "dog" at 2.79-2.86 s at a mean level of
+-70.8 dB, entirely after speech ends. The other words land inside speech, but
+that is expected of any ramp spreading tokens evenly across an utterance that
+is mostly speech; it fails at the tail, where the final tokens ("dog", ".",
+`</en>`) are assigned to silence. The chosen head's argmax
+(`main_blocks.9/attn`, head 1, stream 1) is a near-linear positional ramp:
+mean deviation from `f * (T-1) / (L-1)` is 0.77 tokens. With duration pinned
+so `L` matches, a nonsense text of the same character length ("Xxx xxxxx xxxxx
+xxx xxxxx xxxx xxx xxxx xxx.") gives, at the final denoising step, a stream-0
+argmax agreeing with the fox sentence on 98% of frames (mean difference 0.09
+tokens) and a stream-1 argmax agreeing on 55% (0.49 tokens): neither stream of
+that head tracks text content. **Spearman rho = 0.9995 measured monotonicity.
+Any positional ramp is monotone. It was never a test of content alignment,
+and it was reported as one.** The old numbers reproduce because they are the
+ramp. What survives: `py/attention.py` exposes the eight attention maps, read
+bit-identically to `helper.TextToSpeech`'s own render (the drift-guard test
+still passes). What does not: timestamps. Whether a content-tracking
+alignment exists elsewhere — another head, another block, an earlier
+denoising step, the conditional stream alone — is **open and untested**; the
+audit reports stream 0's best non-constant head at rho 0.665 (not reproduced
+here). Two facts that were never stated: every readout is from the **final
+denoising step only**, and the `stream` axis is **most likely** the
+classifier-free-guidance pair (stream 0 conditional, stream 1 unconditional) —
+from graph structure (batch-axis Concats with an unconditional token,
+`uncond_masker` in `tts.json`), not established. The audit found stream 1
+bit-identical across two styles at step 0; it is not identical at the final
+step (max diff 0.014-0.033 in the text family), consistent with the
+unconditional branch not reading style directly while the shared latent
+trajectory diverges. The README callout advertising the feature is removed.
+Note for future work: `py/test_attention.py` asserts `spearman > 0.95`, which
+a ramp satisfies; it is a drift guard, not a validity test.
+
+**2. The style-attention headline numbers blend both streams.** `analyze()`
+averages over axes `(0, 1)`, heads and both streams. The published figures
+(TV 0.283, range 0.173-0.555; effective rows 34.6, range 10.4-43.6; entropy
+3.740) reproduce exactly, as a blend. Per stream on the same render
+(audit-measured): stream 0 TV mean 0.418 (0.298-0.724), effective rows 24.7
+(5.1-35.1); stream 1 TV mean 0.255 (0.110-0.576), effective rows 32.8
+(6.0-43.1). "Style is read time-varyingly" survives and is stronger in stream
+0; the quoted numbers are not a clean measurement. The dilution is an
+**untested** candidate contributor to task #18's calibration failure (AUC
+0.826); no stream-0-only calibration has been run.
+
+**3. "The 70x spread is the spectrum of `W_value`" is falsified.** Pushing the
+24 `ttl_K64` ladder deltas through the stacked six `W_value` matrices gives
+gain 4.940-5.126 (1.04x range); measured attention signal energy for the same
+24 ranges 5.73e-7 to 9.02e-6 (15.7x); Spearman(gain, energy) = -0.087, p =
+0.69 (the audit, against paired TV: -0.15, p = 0.49). This was
+`STYLE_CONTROL_SURFACE.md`'s own proposed test #2, run and failed. Also, the
+"70x" was never an observed movement spread: it is the spread in extrapolated
+required N (69.8 to 4747, 68x); since N scales as 1/TV^2 the movement spread
+is ~8.25x, measured paired-TV means vary 1.76x (0.00645-0.01135), signal
+energy 15.7x; and "8.1x amplitude = 66x energy brackets ~70x" mixed an
+amplitude ratio with an energy-scale quantity (66 does not bracket 70 anyway).
+
+**4. "`style_ttl` never reaches a `W_key` or `W_query`" is false as
+reachability.** The first-linear-op trace is correct and reproduced: the
+first linear ops downstream of `style_ttl` are exactly the six `W_value`
+MatMuls. Full forward reachability (`Shape` ops excluded) also reaches
+`W_query` of `text_encoder` `attention2` and of `vector_estimator` blocks 9,
+11, 15, 17, 21, 23. So addressing is style-independent at 2 of the 6 style
+nodes (`text_encoder` `attention1`, `vector_estimator` block 5), not all.
+`STYLE_CONTROL_SURFACE.md`'s "In `vector_estimator`, `W_key` comes from
+`noisy_latent`" was wrong: style-block `W_key` is a `Tile` of a folded
+initializer, bit-identical to `style_token_layer.style_key`, with no data
+dependence on any graph input (the `noisy_latent` link was a `Shape`-op batch
+dependency). Task #18's "structural, not statistical" is downgraded to **one
+untested candidate explanation**, alongside finding 2's stream dilution.
+
+**5. Reversed logic on concentration, and an undeclared convention.** The
+stacked `W_value` surface's participation ratio, 199.7, is *above* every
+individual matrix (57.7-142.7) and above the 256x256 null (184.2), below only
+the shape-matched 1536x256 null (245.2): the matrices concentrate on
+*different* directions, complementary rather than "sharing some structure".
+The convention was `(sum s)^2 / sum s^2` on singular values;
+`py/phase2a_ceiling_null.py` uses the energy convention (stack 113.7 vs. null
+219.2). Per matrix, condition numbers run 2.8e3-1.2e5 and `text_encoder`
+`attention1` has 42 of 256 singular values below 1e-3 of the max, so "low-gain,
+not invisible" holds for the stack (min/max singular value 0.124), not per
+layer. Rank is 256 for all six at numpy default tolerance, not "254-256".
+Also: the closing section credited `kdrkdrkdr/supertonic.embed` with gradient
+descent "through these same frozen graphs"; that is v2 code and this fork is
+v3 — `supertonic3-voice-clone` is the v3 reference.
+
+**6. The paired-vs-unpaired error survived in more places than the 2026-09-25
+correction fixed.** Same error as the 0.26x reading: (a) the preset-span
+"mean 0.0229 is inside the same-style floor's own spread" / "below the
+per-sample floor" — 0.0229 is a shared-seed paired TV, the floor 0.0328 +/-
+0.0114 is unpaired, so the "group resolution, not sample resolution" limit is
+not supported by that comparison and is **unestablished**; (b) the timing
+shifts "73.7 ms max / 11.0 ms mean, both below the same-style floor (109 /
+41.6 ms)" — paired shifts against an unpaired floor, and from the withdrawn
+`word_spans` readout.
+
+**7. "0.00840 reproduces 0.00846" was not like-for-like.** 0.00846 is the
+pooled `K4`+`K16`+`K64` mean (0.00647 / 0.00886 / 0.01004); 0.00840 is `K64`
+only, whose like-for-like figure is 0.01004; and paired TV moves about 2x with
+seed alone (K4: 0.00616 at seed 0, 0.01183 at seed 1).
+
+Smaller corrections, each marked in place: "paired is 20-40x cheaper than
+unpaired" is 8-21x (8.1x against N=512, 21x against N=1332; no source for 40x);
+"second seed reproduces both group means within 3%" holds for one of four
+(2.6%; the others 6.3%, 5.6%, 4.4%); "30-600x below the ladder's 0.00846" is
+right arithmetic against the wrong comparator — the ladder's noise-free
+separation is 0.00301, ~11x above the asymptote's CI upper bound — and the CI
+`[1.3e-6, 2.8e-4]` excludes zero, so "consistent with zero at the ladder's
+scale"; the floor-generalization check ran on the 10 shipped presets, which
+include M1, not "10 other" ones; the 09-24 second-seed sign flip rests on n=20
+per K (60 samples), not 240. In `docs/PRIOR_ART.md`, the v2-vs-v3
+`vector_estimator` mismatch is upgraded from "inference from dates and sizes" to
+**confirmed by file size** (HF `supertonic-2` `vector_estimator.onnx` =
+132,471,364 bytes, the repo's "132 MB"; HF `supertonic-3` = 256,534,781,
+byte-identical to this fork's file; 33.0M params x 4 bytes = 132 MB, so not an
+fp16 export), while the other side's 964-node count remains relayed, unchecked,
+and this fork's "64.0M params" is 64,013,449 float32 (85 INT64 initializers,
+1,127 elements, excluded).
+
+**What this does to the live plan.** A grep of this file finds the word spans
+used only in the 2026-09-23 and 2026-09-24 sections above, not in the Phase 3
+or VCTK plan. The weights-level picture (six `W_value`
+first-entry points, constant keys, style-dependent queries at four of the six
+nodes) stands as a structural description, with the two explanatory claims that
+were hung on it removed. The style-attention instrument keeps the standing it
+had after the 2026-09-24 calibration — a group-level, seed-limited readout — and
+its per-stream behaviour is an open question, not a settled one.
 
 ## Phase 3: Deriving the Axes
 
