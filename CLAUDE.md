@@ -89,25 +89,42 @@ inline burns the context the main loop needs for judgment.
   [docs/STYLE_CONTROL_SURFACE.md](docs/STYLE_CONTROL_SURFACE.md). Nothing
   here is yet connected to audibility: "the model is more sensitive to this
   direction" is not "a listener hears this direction."
-- **Community prior art exists and one piece of it is directly useful.**
-  `kdrkdrkdr/supertonic.embed` (MIT code, targets supertonic-2, actively
-  maintained) gets a style tensor from a reference recording by **gradient
-  descent through the frozen graphs** — onnx2torch, every weight frozen,
-  backprop until a frozen WavLM's pooled layer statistics match — rather than
-  by training an encoder. It independently reaches two of this fork's own
-  conclusions: it fits `style_dp` by matching a rate rather than per-token
-  durations, and it re-projects every row onto the unit sphere each step.
-  That path sidesteps the ridge rank ceiling rather than fighting it, needs
-  no dataset, and generalizes to a named axis by swapping in a differentiable
-  probe for that axis. `ORI-Muchim/supertonictts-training` is real
-  from-scratch training code with a genuine style-encoder module, but ships
-  no weights and does **not** offer a way to fine-tune the shipped
-  style-conditioning graphs, so the frozen premise stands. Before porting any
-  of it, check the graph: that repo's dump of "the released
-  `vector_estimator`" reports 964 nodes / 33.0M params / 132 MB, while this
-  fork's file is **1004 nodes / 64.0M params, all float32 / 256,534,781
-  bytes**, both claiming supertonic-2. See
-  [docs/PRIOR_ART.md](docs/PRIOR_ART.md).
+- **This fork runs Supertonic 3, not Supertonic 2 — check which release a
+  claim or a tool is about before trusting it.** `assets/README.md` is titled
+  Supertonic 3 with 31 languages, the four graphs total 99.2M parameters
+  (v3's published ~99M), and the README has cloned `Supertone/supertonic-3`
+  since `0a98c9f` (2026-05-06), four months before this research began, so
+  every measurement in this repository is on v3. A research agent's claim
+  that the fork shipped "supertonic-2" was relayed into this file unchecked
+  and inverted a recommendation; it was caught by the user. Two version
+  facts matter for anything external. Upstream calls v3's public ONNX
+  assets **"v2-compatible"** — same tensor names and shapes — but the
+  graphs underneath differ (this fork's `vector_estimator` is 1004 nodes /
+  64.0M params / 256,534,781 bytes; a v2 dump in one community repo is 964 /
+  33.0M / 132 MB), so graph-level patches and node indices do not transfer
+  on the strength of a matching interface. And **style tensors are
+  version-specific**: upstream's Voice Builder ships separate v2 and v3 JSON
+  files, so a v2-derived style tensor has the right shape and is not a valid
+  input here.
+- **Community prior art: gradient inversion through the frozen graphs is
+  the approach to try, and the v3 reference is `saurabhv749/supertonic3-voice-clone`.**
+  Two community repos get a style tensor from a reference recording by
+  **gradient descent through the frozen graphs** — onnx2torch, every weight
+  frozen, backprop against a perceptual objective — rather than by training
+  an encoder. That sidesteps the ridge rank ceiling instead of fighting it,
+  needs no dataset, and generalizes to a named axis by swapping in a
+  differentiable probe for that axis. `supertonic3-voice-clone` targets v3,
+  this fork's release, with an ECAPA objective and `style_ttl` only.
+  `kdrkdrkdr/supertonic.embed` is the better-developed design — it also fits
+  `style_dp`, by matching a rate rather than per-token durations, and
+  re-projects rows onto the unit sphere each step, both independently
+  matching this fork's own conclusions — but it is **v2 code**, so every
+  graph-level patch needs re-checking against v3. This fork's own
+  `py/onnx2torch_patches.py` is v3-native and has `text_encoder` verified.
+  `ORI-Muchim/supertonictts-training` is real from-scratch training code
+  with a genuine style-encoder module, but ships no weights and offers no way
+  to fine-tune the shipped style-conditioning graphs, so the frozen premise
+  stands. See [docs/PRIOR_ART.md](docs/PRIOR_ART.md).
 - **A graph's declared outputs are the exporter's choice, not a property of
   the weights — "frozen" bounds what you can change, never what you can
   read.** This file previously recorded that "there is no per-token duration
