@@ -66,26 +66,40 @@ inline burns the context the main loop needs for judgment.
   from the `style_ttl` graph input to the first linear op, it reaches exactly
   six MatMuls and nothing else: `attention{1,2}/W_value` in `text_encoder`
   and `main_blocks.{5,11,17,23}/attention/W_value` in `vector_estimator`.
-  All six are **W_value**; `style_ttl` never reaches a `W_key` or `W_query`
-  projection. The key tensor traces back through `Tile`/`Expand` to an
-  initializer named `tts.ttl.style_encoder.style_token_layer.style_key`, and
-  is bit-identical under two completely different random style tensors
-  (max abs difference 0.0, shape `(1,50,256)`). So the addressing over slots
-  is style-independent; the style lives in the values. One exception:
-  `text_encoder/attention2`'s `W_query` does see `style_ttl`, and
-  `vector_estimator`'s queries see `text_emb`, which is style-conditioned, so
-  routing is indirectly style-dependent downstream of the text encoder.
+  All six are **W_value**: `style_ttl` *first enters* the model only as
+  attention values. It does not stay out of the routing — full forward
+  reachability carries it, through the residual stream, into the `W_query`
+  of `text_encoder/attention2` and of `vector_estimator` blocks 9, 11, 15,
+  17, 21 and 23. (An earlier version of this bullet said `style_ttl`
+  "never reaches a `W_key` or `W_query`"; that confused first entry with
+  reachability, and an audit caught it.) The slot keys are constants: the
+  style-attention `W_key` inputs are a `Tile` of an initializer named
+  `tts.ttl.style_encoder.style_token_layer.style_key`, with no data
+  dependence on any graph input, and are bit-identical under two completely
+  different random style tensors (max abs difference 0.0, shape
+  `(1,50,256)`). So slot addressing is fully style-independent at only two
+  of the six style nodes — `text_encoder/attention1` and `vector_estimator`
+  block 5 — and style-dependent through the query everywhere else.
   The six projections are essentially full rank (254–256), so directions are
   **low-gain, not invisible**, but the gain is far from flat: stacked to
   1536x256 the surface has participation 199.7 against 245.2 for a
   shape-matched Gaussian null, 40 of 256 directions carry half the energy,
   and the top-to-bottom singular value ratio is **8.1x against the null's
-  2.34x**. Two consequences worth carrying: task #18's failure to read style
-  off the row-attention profile was **structural, not statistical** — it was
-  measuring the addressing, which is nearly style-independent by
-  construction — and the parametrisation question changes shape, because
-  Phase 2b's rank ceiling was `n_train/d` at `d = 6144` when the effective
-  dimensionality of what the model can distinguish is far smaller. See
+  2.34x**. Per matrix the conditioning is much worse (condition numbers
+  2.8e3 to 1.2e5), so "low-gain, not invisible" holds for the stack, not
+  per layer; and the stack is *less* concentrated than any single matrix,
+  so the six emphasise complementary directions rather than shared ones.
+  Two things this was first said to explain, and did not: an earlier
+  version called task #18's failure to read style off the row-attention
+  profile "structural, not statistical". That is one untested candidate
+  among at least two, the other being that the profile averaged in the
+  classifier-free-guidance unconditional stream (see the next bullet). And
+  it was said to explain why equal-norm perturbations differ in how much
+  they move attention — **falsified by its own proposed test**: across the
+  24 ladder deltas the stacked `W_value` gain varies 1.04x while attention
+  signal energy varies 15.7x, Spearman -0.09 (p=0.69). What survives is a
+  proposal, not a result: parametrise in the coordinates the model reads,
+  since Phase 2b's rank ceiling was `n_train/d` at `d = 6144`. See
   [docs/STYLE_CONTROL_SURFACE.md](docs/STYLE_CONTROL_SURFACE.md). Nothing
   here is yet connected to audibility: "the model is more sensitive to this
   direction" is not "a listener hears this direction."
@@ -136,18 +150,26 @@ inline burns the context the main loop needs for judgment.
   8 `Softmax` outputs to `graph.output` and re-saving exposes both of its
   attention families, with no retraining, no gradients and no onnx2torch.
   `main_blocks.{3,9,15,21}/attn` is `(heads=8, 2, latent_frames, text_units)`
-  — the text alignment, monotonic at Spearman `rho = 0.9995` on the head the
-  tool selects — and `main_blocks.{5,11,17,23}/attention` is
-  `(2, 2, latent_frames, 50)`, each latent frame's own softmax over the 50
-  rows of `style_ttl`. So the rows are attention keys and values read
-  time-varyingly, which is the *mechanism* behind the per-position reach
-  guessed at above, and it is now measurable rather than inferred: on the
-  verified render each frame's row distribution sits a mean total-variation
-  distance of 0.283 (range 0.173–0.555) from the utterance mean, using
-  between 10.4 and 43.6 effective rows of 50. `py/attention.py` ships this;
-  see [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md) for what it does
-  and does not reach — it aligns the model's own generated audio only, and
-  is no route to transcription or to aligning external recordings.
+  and `main_blocks.{5,11,17,23}/attention` is `(2, 2, latent_frames, 50)`,
+  each latent frame's softmax over the 50 rows of `style_ttl`. The `2` is
+  most likely the classifier-free-guidance pair — the graph concatenates
+  `text_emb` with a masked unconditional token, and `style_ttl` with a
+  special value token, on that axis, and `tts.json` has an `uncond_masker`
+  block — so stream 0 would be conditional and stream 1 unconditional.
+  **This was first shipped as a word-timestamp feature, and it is not
+  one.** The "alignment" head `py/attention.py` selects scored Spearman
+  `rho = 0.9995` — which measures monotonicity, and any positional ramp is
+  monotone. Its argmax sits within 0.77 tokens of a straight line; against
+  the rendered audio it placed "dog" at 2.79–2.86 s at -70.8 dB, after
+  speech had ended at 2.64 s; and a nonsense text of the same length gives
+  near-identical argmaxes. The style readout's headline numbers (mean TV
+  0.283, 10.4–43.6 effective rows) also averaged both streams; per stream
+  they are 0.418 / 24.7 (stream 0) and 0.255 / 32.8 (stream 1). "Style is
+  read time-varyingly" survives, and is stronger in stream 0. What
+  `py/attention.py` does correctly is expose the eight maps, bit-identical
+  to `helper.TextToSpeech`'s own render. Whether any head carries a
+  content-tracking alignment is open. See
+  [docs/ATTENTION_READOUT.md](docs/ATTENTION_READOUT.md).
   The general lesson is the one that cost the most here: before recording
   that something inside a frozen graph is unreachable, check whether it is
   merely unexported.
@@ -292,6 +314,18 @@ inline burns the context the main loop needs for judgment.
   perturbation ladder must be rms level-matched first: magnitude alone buys up
   to +4.9 dB of plain loudness in `style_ttl`, and an unmatched comparison is
   decided by which clip is louder rather than by the effect under test.
+- **Check a readout against the thing it claims to read before calling it
+  verified.** The word-timestamp feature passed every test it was given —
+  a monotonicity score of 0.9995, nine plausible spans, a bit-identical
+  drift guard — and none of those tests could fail on a head that ignores
+  the text. A monotone positional ramp scores the same. The first check
+  against the waveform put a word in silence. A statistic that the null
+  hypothesis also satisfies is not evidence; ask what the metric would
+  return if the effect were absent, then check the output against ground
+  truth in the domain it describes — audio for timestamps, a listener for
+  audibility. This is the calibration rule below, applied to a structural
+  readout instead of a distance, and it was missed for the same reason: the
+  number looked good.
 - **Calibrate a distance before citing it as evidence.** This project has now
   been misled by an uncalibrated metric three times, each caught by a
   listener or a calibrated measurement rather than by the metric itself:
@@ -331,8 +365,10 @@ inline burns the context the main loop needs for judgment.
   two *different* seeds. Under a shared seed the pipeline is deterministic,
   so an unperturbed pair scores exactly 0; the right denominator was zero and
   the perturbation was being called invisible against a yardstick built for a
-  different design. `py/phase3_seed_averaging.py` reproduces the measurement
-  at 0.00840 and shows the signal is real: the mean difference vector has
+  different design. `py/phase3_seed_averaging.py` measured 0.00840 on its
+  K64 styles — not a replication of 0.00846, which pooled K4, K16 and K64;
+  the like-for-like K64 figure is 0.01004, and paired TV moves about 2x
+  between seeds — and shows the signal is real: the mean difference vector has
   cosine 0.726 +/- 0.208 between disjoint seed halves, the per-style ranking
   survives the split at Spearman 0.587 (p=0.0026), and every one of 24 styles
   has positive unbiased signal energy. Pairing is also simply better
@@ -344,8 +380,10 @@ inline burns the context the main loop needs for judgment.
 - **Averaging is bounded by price, not by a floor — check which before
   concluding either.** Seed-averaging the attention profile shrinks the
   same-style distance as `a/sqrt(N)` with exponent -0.5096 (R^2 0.99959) and
-  a fitted asymptote of 1.4e-5, CI95 [1.3e-6, 2.8e-4] — zero, so there is no
-  irreducible bias and enough averaging would resolve anything. What stops it
+  a fitted asymptote of 1.4e-5, CI95 [1.3e-6, 2.8e-4] — consistent with zero
+  at the scale that matters (the upper bound is ~11x below the ladder's
+  noise-free separation of 0.00301), so enough averaging would resolve the
+  ladder. What stops it
   is arithmetic: a perturbation's noise-free separation is 0.00301 against
   0.0483 for a different shipped voice, about a sixteenth, and N scales as
   1/TV^2, so presets separate at N=8 while perturbations need order 10^3 —
